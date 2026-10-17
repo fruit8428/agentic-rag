@@ -52,7 +52,7 @@ export default function App() {
               Agentic RAG
             </span>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-              模組 6：混合搜索與重排序 (Hybrid + RRF + Rerank)
+              模組 7：附加工具 (Text-to-SQL + 網路搜索回退)
             </span>
           </div>
 

@@ -51,3 +51,11 @@
 - [x] 4. 升級前端聊天室檢索來源卡片（`frontend/src/components/ChatView.tsx` 與 `frontend/src/App.tsx`：顯示 `🔥 雙軌命中` / `🎯 關鍵字命中` / `🧠 向量語意命中` 徽章、RRF 分數與雙軌排名、以及 `✨ Rerank 精準度` 與重排序依據）
 - [x] 5. 端到端驗證測試（驗證 RRF 雙軌融合排名、AI Reranking 與前端 TypeScript 編譯）
 
+### 模組 7：附加工具（Text-to-SQL 結構化數據查詢 ＋ 網路搜索回退 Web Search Fallback）
+- [x] 1. 規劃並建立模組 7 實施計劃（`.agent/plans/7.附加工具與網路搜索.md`）與 SQL 結構化統計視圖（`supabase/migrations/007_module7_additional_tools.sql`）
+- [x] 2. 建立多工具服務（`backend/app/services/additional_tools.py`：Pydantic `StructuredSqlQueryPlanSchema` + `execute_structured_sql_tool` 全表結構化統計查詢，以及 `execute_web_search_tool` 結合 DuckDuckGo / Google News RSS / 中文維基百科之即時網路搜索）
+- [x] 3. 升級多工具代理路由（`backend/app/routers/chat.py`：支援 `search_knowledge_base`、`query_structured_database`、`search_web_fallback` 智慧分流，並在知識庫無結果時自動啟動優雅網路回退）
+- [x] 4. 升級前端聊天介面（`frontend/src/components/ChatView.tsx` 與 `frontend/src/App.tsx`：顯示 `🗄️ Text-to-SQL 結構化統計` SQL 語法區塊、`🌐 外部網路搜尋來源` 可點擊外部連結與多工具範例提問按鈕）
+- [x] 5. 端到端驗證測試與 GitHub 同步更新
+
+

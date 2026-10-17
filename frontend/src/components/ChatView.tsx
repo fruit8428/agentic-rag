@@ -33,13 +33,15 @@ interface SourceChunk {
   chunk_index: number
   content: string
   similarity: number
-  match_type?: 'hybrid' | 'keyword' | 'vector'
+  match_type?: 'hybrid' | 'keyword' | 'vector' | 'sql' | 'web'
   keyword_rank?: number | null
   vector_rank?: number | null
   vector_similarity?: number | null
   rrf_score?: number | null
   rerank_score?: number | null
   rerank_reason?: string | null
+  sql_query?: string | null
+  web_url?: string | null
 }
 
 interface DocOption {
@@ -60,6 +62,7 @@ interface MessageItem {
   role: 'user' | 'assistant' | 'system'
   content: string
   sources?: SourceChunk[]
+  toolName?: string
   toolQuery?: string
   isSearchingTool?: boolean
   created_at: string
@@ -309,6 +312,7 @@ export function ChatView({ accessToken }: ChatViewProps) {
                     ? {
                         ...m,
                         isSearchingTool: true,
+                        toolName: event.tool,
                         toolQuery: event.query,
                       }
                     : m
@@ -321,6 +325,7 @@ export function ChatView({ accessToken }: ChatViewProps) {
                     ? {
                         ...m,
                         isSearchingTool: false,
+                        toolName: event.tool,
                         toolQuery: event.query,
                         sources: event.sources || [],
                       }
@@ -446,17 +451,17 @@ export function ChatView({ accessToken }: ChatViewProps) {
                 <Bot className="w-7 h-7" />
               </div>
               <h2 className="text-xl font-semibold text-white mb-2">
-                歡迎使用你的 Agentic RAG 助理
+                歡迎使用你的多工具 Agentic RAG 助理
               </h2>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
-                目前已啟用 <strong>模組 6：混合搜索與重排序（Hybrid Search + RRF + AI Reranking）</strong>。系統會同時執行「關鍵字精準檢索」與「pgvector 語意向量搜尋」，透過 RRF 倒數排名融合與 AI 重排序，確保名單與語意問題皆 100% 精準命中！
+                目前已啟用 <strong>模組 7：多工具代理（混合檢索 + Text-to-SQL 結構化統計 + 網路搜索回退）</strong>。Agent 會自動根據你的問題在「內部文件段落檢索」、「資料庫 SQL 結構化盤點統計」與「外部即時網路搜尋」之間智慧路由！
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
                 {[
                   '請問松青社有誰得獎？',
-                  '請問民生社有誰得獎？',
+                  '幫我用 SQL 統計目前知識庫共有幾份文件、幾個分塊，以及松青社與民生社的得獎筆數？',
+                  '請上網搜尋國際扶輪 3481 地區的官方網站與最新活動資訊？',
                   '請問第三全會有誰獲得超我服務獎？',
-                  '這份年會頒獎名單的集合時間與領獎注意事項是什麼？',
                 ].map((sample) => (
                   <button
                     key={sample}
@@ -495,7 +500,12 @@ export function ChatView({ accessToken }: ChatViewProps) {
                           <div className="px-3.5 py-2.5 flex items-center gap-2 text-indigo-300">
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
                             <span>
-                              Agent 正在執行混合檢索 (關鍵字 + 向量 + RRF + AI 重排序)：<strong>「{msg.toolQuery}」</strong>...
+                              {msg.toolName === 'query_structured_database'
+                                ? 'Agent 正在執行 Text-to-SQL 結構化數據與全表統計查詢：'
+                                : msg.toolName === 'search_web_fallback'
+                                ? 'Agent 正在執行外部即時網路搜索 (Web Search Fallback)：'
+                                : 'Agent 正在執行混合檢索 (關鍵字 + 向量 + RRF + AI 重排序)：'}
+                              <strong>「{msg.toolQuery}」</strong>...
                             </span>
                           </div>
                         ) : (
@@ -508,7 +518,12 @@ export function ChatView({ accessToken }: ChatViewProps) {
                               <div className="flex items-center gap-2">
                                 <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
                                 <span>
-                                  混合檢索 + RRF + AI 重排序：已精選 <strong>{msg.sources?.length}</strong> 個最佳段落（點擊{isExpanded ? '收合' : '查看檢索指標與原文'}）
+                                  {msg.sources?.some((s) => s.match_type === 'sql')
+                                    ? '🗄️ Text-to-SQL 結構化數據查詢完成'
+                                    : msg.sources?.some((s) => s.match_type === 'web')
+                                    ? `🌐 網路搜索回退：已檢索 ${msg.sources?.length} 筆外部網頁來源`
+                                    : `📚 混合檢索 + RRF + AI 重排序：已精選 ${msg.sources?.length} 個最佳段落`}
+                                  （點擊{isExpanded ? '收合' : '查看工具指標與來源明細'}）
                                 </span>
                               </div>
                               {isExpanded ? (
@@ -530,7 +545,11 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-indigo-300 font-medium">
                                         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                           <span className="truncate">
-                                            📄 {src.filename} (段落 #{src.chunk_index + 1})
+                                            {matchType === 'sql'
+                                              ? `🗄️ ${src.filename}`
+                                              : matchType === 'web'
+                                              ? `${src.filename}`
+                                              : `📄 ${src.filename} (段落 #${src.chunk_index + 1})`}
                                           </span>
                                           {src.category && (
                                             <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 text-[10px]">
@@ -544,9 +563,17 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                           )}
                                         </div>
 
-                                        {/* 模組 6：雙軌檢索來源徽章 + RRF + Rerank 分數 */}
+                                        {/* 模組 6 & 7：檢索與多工具來源徽章 */}
                                         <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                          {matchType === 'hybrid' ? (
+                                          {matchType === 'sql' ? (
+                                            <span className="px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 text-[10px]">
+                                              🗄️ Text-to-SQL 結構化統計
+                                            </span>
+                                          ) : matchType === 'web' ? (
+                                            <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px]">
+                                              🌐 外部網路搜尋來源 #{idx + 1}
+                                            </span>
+                                          ) : matchType === 'hybrid' ? (
                                             <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px]">
                                               🔥 雙軌命中 (關鍵字 #{src.keyword_rank} + 向量 #{src.vector_rank})
                                             </span>
@@ -566,15 +593,34 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                             </span>
                                           )}
 
-                                          <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-200 text-[10px]">
-                                            ✨ Rerank 精準度 {((src.rerank_score ?? src.similarity) * 100).toFixed(1)}%
-                                          </span>
+                                          {matchType !== 'sql' && matchType !== 'web' && (
+                                            <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-200 text-[10px]">
+                                              ✨ Rerank 精準度 {((src.rerank_score ?? src.similarity) * 100).toFixed(1)}%
+                                            </span>
+                                          )}
+
+                                          {src.web_url && (
+                                            <a
+                                              href={src.web_url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="px-1.5 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/30 text-[10px] underline"
+                                            >
+                                              🔗 開啟來源網頁
+                                            </a>
+                                          )}
                                         </div>
                                       </div>
 
+                                      {src.sql_query && (
+                                        <pre className="text-[10px] text-fuchsia-200 bg-slate-950 border border-fuchsia-500/30 rounded p-2 overflow-x-auto font-mono">
+                                          {src.sql_query}
+                                        </pre>
+                                      )}
+
                                       {src.rerank_reason && (
                                         <div className="text-[10px] text-emerald-300/90 bg-emerald-950/40 border border-emerald-500/20 rounded px-2 py-1">
-                                          💡 重排序依據：{src.rerank_reason}
+                                          💡 工具路由/重排序依據：{src.rerank_reason}
                                         </div>
                                       )}
 

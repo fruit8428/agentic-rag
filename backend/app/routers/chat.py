@@ -12,6 +12,10 @@ from app.llm import llm_client
 from app.services.ingestion import embed_query
 from app.services.record_manager import compute_sha256_text
 from app.services.hybrid_search import execute_hybrid_rerank_search
+from app.services.additional_tools import (
+    execute_structured_sql_tool,
+    execute_web_search_tool,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -22,13 +26,19 @@ FALLBACK_MODELS = [
     "gemini-3-flash-preview",
 ]
 
-SYSTEM_PROMPT = """你是一個專業、友善且樂於助人的 Agentic RAG AI 助理（基於 Google Gemini 驅動）。
+SYSTEM_PROMPT = """你是一個專業、友善且樂於助人的多工具 Agentic RAG AI 助理（基於 Google Gemini 驅動）。
 請使用繁體中文回答使用者的問題，保持結構清晰、排版易讀（善用 Markdown 標題、清單與表格）。
 
-【重要工具使用守則】：
-- 當用戶詢問任何具體知識、文件內容、得獎名單、社團/公司資料、插件功能、報告細節，或任何可能存在於上傳文件中的問題時，請務必先呼叫 `search_knowledge_base` 工具來檢索用戶上傳的私有文件。
-- 呼叫 `search_knowledge_base` 時，`query` 請填寫最核心的專有名詞或關鍵字（例如用戶問「請問民生社有誰得獎」，`query` 請填「民生」；問「請問松青社有誰得獎」，`query` 請填「松青」）。
-- 若檢索結果有相關內容，請仔細核對所有檢索到的段落（特別注意標示為「⚡關鍵字精準命中行」的每一筆資料，但因相鄰段落可能有重疊區間，若同一人在同一獎項於相鄰兩個段落重複出現，請自動去重只列一次；若同一人獲得不同獎項則必須分開完整列出），完整列出所有符合條件的：分區與社名、姓名、Nickname（稱號）、獎項名稱、頒獎時段、備註（集合時間與地點），並註明參考來源文件名與段落。
+【多工具代理（Multi-Tool Agent）路由守則】：
+1. **工具 A：`search_knowledge_base`（混合搜索 + RRF + AI 重排序）**
+   - 當用戶詢問任何具體文件內容、特定扶輪社得獎名單（如松青社、民生社）、個人獲獎紀錄、插件功能、會議集合時間或領獎注意事項時，請優先呼叫此工具。
+   - `query` 請填寫最核心的專有名詞或關鍵字（例如問「請問民生社有誰得獎」，`query` 填「民生」）。
+   - 若檢索結果有「⚡關鍵字精準命中行」，請完整列出每一筆資料（若相鄰段落重疊同一人同一獎項請自動去重只列一次；不同獎項則分開列出），包含：分區與社名、姓名、Nickname（稱號）、獎項名稱、頒獎時段、備註。
+2. **工具 B：`query_structured_database`（模組 7：Text-to-SQL 結構化數據與全表統計查詢）**
+   - 當用戶詢問「知識庫目前共有幾份文件？各分類有幾份？總共有幾個分塊？」或需要「跨整份文件進行結構化筆數統計、各社得獎總筆數比較、清單盤點」時，請呼叫此工具執行 PostgreSQL 結構化分析。
+3. **工具 C：`search_web_fallback`（模組 7：即時網路搜索與外部資訊回退）**
+   - 當用戶詢問「即時新聞、外部公開資訊、國際扶輪全球年度資訊、一般知識」，或當問題明顯不在用戶上傳的私有文件中時，請呼叫此工具上網檢索。
+   - **可信度來源歸因（Attribution for Trust）**：回答時請明確區分並標註哪些內容來自「📄 內部知識庫文件」、哪些來自「🗄️ 結構化資料庫統計」、哪些來自「🌐 外部網路搜尋（並附上來源媒體與連結）」。
 """
 
 RAG_TOOLS = [
@@ -36,7 +46,7 @@ RAG_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_knowledge_base",
-            "description": "在用戶上傳的私有知識庫文件（PDF、Markdown、TXT）中執行混合檢索（關鍵字 + pgvector 向量語意檢索 + 模組 4 元數據過濾），找出與問題最相關的文件段落。",
+            "description": "在用戶上傳的私有知識庫文件（PDF、DOCX、HTML、CSV、MD、TXT）中執行三階段混合檢索（關鍵字 + pgvector 向量 + RRF + AI 重排序），找出與問題最相關的文件段落。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -52,7 +62,41 @@ RAG_TOOLS = [
                 "required": ["query"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_structured_database",
+            "description": "模組 7 Text-to-SQL 結構化數據查詢工具：當用戶詢問知識庫文件總數、各分類文件統計、分塊與字數統計，或需要跨全文件所有段落統計特定社團/獎項的總筆數時呼叫。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "natural_query": {
+                        "type": "string",
+                        "description": "使用者的結構化統計或盤點問題（例如：『統計知識庫所有文件與分類數量』或『統計松青社與民生社在全文件中的得獎筆數』）",
+                    }
+                },
+                "required": ["natural_query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web_fallback",
+            "description": "模組 7 即時網路搜索工具：當用戶詢問外部即時新聞、公開網路資訊，或私有知識庫文件中沒有相關答案時呼叫此工具上網搜尋。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "要在網際網路上搜尋的關鍵字（例如：『國際扶輪 3481 地區 最新活動』或『AI Agent RAG 最新趨勢』）",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -328,111 +372,189 @@ async def run_agentic_rag_turn(
     category_filter: Optional[str] = None,
 ):
     """
-    執行 Agentic RAG 決策與串流生成（內建模組 4 元數據過濾、503 自動模型備援與串流防截斷機制）。
+    執行多工具 Agentic RAG 決策與串流生成（支援：
+    1. 模組 6 混合檢索 + RRF + AI 重排序 (`search_knowledge_base`)
+    2. 模組 7 Text-to-SQL 結構化數據查詢 (`query_structured_database`)
+    3. 模組 7 即時網路搜索與無結果優雅回退 (`search_web_fallback`)
+    ）。
     """
     retrieved_sources: list[dict] = []
 
-    if has_documents:
-        # 第一階段：讓 Gemini 判斷是否需要呼叫檢索工具
-        first_resp = await create_chat_completion_with_fallback(
-            model=settings.LLM_MODEL,
-            messages=history_messages,
-            tools=RAG_TOOLS,
-            tool_choice="auto",
-            stream=False,
-        )
-        choice_msg = first_resp.choices[0].message
+    # 第一階段：讓 Gemini 多工具代理判斷需要呼叫哪一個（或多個）工具
+    first_resp = await create_chat_completion_with_fallback(
+        model=settings.LLM_MODEL,
+        messages=history_messages,
+        tools=RAG_TOOLS,
+        tool_choice="auto",
+        stream=False,
+    )
+    choice_msg = first_resp.choices[0].message
 
-        if choice_msg.tool_calls:
-            tool_outputs = []
-            for tc in choice_msg.tool_calls:
-                if tc.function.name == "search_knowledge_base":
-                    try:
-                        args = json.loads(tc.function.arguments or "{}")
-                    except Exception:
-                        args = {}
-                    search_query = args.get("query") or history_messages[-1]["content"]
-                    effective_category = category_filter or args.get("category_filter")
+    if choice_msg.tool_calls:
+        tool_outputs = []
+        for tc in choice_msg.tool_calls:
+            tool_name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except Exception:
+                args = {}
 
-                    yield {
-                        "type": "tool_start",
-                        "tool": "search_knowledge_base",
-                        "query": search_query,
-                        "category_filter": effective_category,
-                        "document_id_filter": document_id_filter,
-                    }
+            if tool_name == "search_knowledge_base":
+                search_query = args.get("query") or history_messages[-1]["content"]
+                effective_category = category_filter or args.get("category_filter")
 
-                    matches = await execute_hybrid_rerank_search(
+                yield {
+                    "type": "tool_start",
+                    "tool": "search_knowledge_base",
+                    "query": search_query,
+                    "category_filter": effective_category,
+                    "document_id_filter": document_id_filter,
+                }
+
+                matches = (
+                    await execute_hybrid_rerank_search(
                         user=user,
                         query=search_query,
                         document_id_filter=document_id_filter,
                         category_filter=effective_category,
                     )
-                    for m in matches:
-                        retrieved_sources.append(
-                            {
-                                "filename": m.get("filename", "未知文件"),
-                                "category": m.get("category"),
-                                "event_or_year": m.get("event_or_year"),
-                                "chunk_index": m.get("chunk_index", 0),
-                                "content": m.get("content", ""),
-                                "similarity": round(float(m.get("similarity", 0.0)), 3),
-                                "match_type": m.get("match_type", "vector"),
-                                "keyword_rank": m.get("keyword_rank"),
-                                "vector_rank": m.get("vector_rank"),
-                                "vector_similarity": m.get("vector_similarity"),
-                                "rrf_score": m.get("rrf_score"),
-                                "rerank_score": m.get("rerank_score"),
-                                "rerank_reason": m.get("rerank_reason"),
-                            }
-                        )
+                    if has_documents
+                    else []
+                )
+                for m in matches:
+                    retrieved_sources.append(
+                        {
+                            "filename": m.get("filename", "未知文件"),
+                            "category": m.get("category"),
+                            "event_or_year": m.get("event_or_year"),
+                            "chunk_index": m.get("chunk_index", 0),
+                            "content": m.get("content", ""),
+                            "similarity": round(float(m.get("similarity", 0.0)), 3),
+                            "match_type": m.get("match_type", "vector"),
+                            "keyword_rank": m.get("keyword_rank"),
+                            "vector_rank": m.get("vector_rank"),
+                            "vector_similarity": m.get("vector_similarity"),
+                            "rrf_score": m.get("rrf_score"),
+                            "rerank_score": m.get("rerank_score"),
+                            "rerank_reason": m.get("rerank_reason"),
+                        }
+                    )
 
+                if matches:
                     yield {
                         "type": "tool_end",
                         "tool": "search_knowledge_base",
                         "query": search_query,
                         "sources": retrieved_sources,
                     }
+                    formatted_chunks = "\n\n---\n\n".join(
+                        [
+                            (
+                                f"【📄 內部知識庫來源：{m.get('filename')} | 類別：{m.get('category') or '一般'} "
+                                f"| 段落 #{m.get('chunk_index', 0) + 1} "
+                                f"| 檢索模式：{m.get('match_type')} (RRF={m.get('rrf_score')}) "
+                                f"| Rerank 精準度：{round(float(m.get('similarity', 0)) * 100, 1)}%】\n{m.get('content')}"
+                            )
+                            for m in matches
+                        ]
+                    )
+                    tool_outputs.append(
+                        f"透過 `search_knowledge_base(query='{search_query}')` 執行混合檢索（關鍵字 + 向量 + RRF + AI 重排序）成功找到以下 {len(matches)} 個最相關文件段落：\n\n{formatted_chunks}"
+                    )
+                else:
+                    # 模組 7 優雅回退（Graceful Fallback）：當內部知識庫查無結果時，自動啟動外部網路搜尋
+                    yield {
+                        "type": "tool_start",
+                        "tool": "search_web_fallback",
+                        "query": search_query,
+                    }
+                    web_res = await execute_web_search_tool(
+                        query=search_query,
+                        max_results=4,
+                        fallback_reason=f"內部知識庫未找到「{search_query}」，自動啟動網路搜索回退",
+                    )
+                    retrieved_sources.extend(web_res.get("source_cards", []))
+                    yield {
+                        "type": "tool_end",
+                        "tool": "search_web_fallback",
+                        "query": search_query,
+                        "sources": retrieved_sources,
+                    }
+                    tool_outputs.append(
+                        f"內部私有知識庫中未找到與「{search_query}」直接相符的段落，系統已自動觸發【模組 7：網路搜索優雅回退（Web Search Fallback）】，檢索到以下外部即時資訊：\n\n{web_res.get('formatted_context')}"
+                    )
 
-                    if matches:
-                        formatted_chunks = "\n\n---\n\n".join(
-                            [
-                                (
-                                    f"【來源文件：{m.get('filename')} | 類別：{m.get('category') or '一般'} "
-                                    f"| 段落 #{m.get('chunk_index', 0) + 1} "
-                                    f"| 檢索模式：{m.get('match_type')} (RRF={m.get('rrf_score')}) "
-                                    f"| Rerank 精準度：{round(float(m.get('similarity', 0)) * 100, 1)}%】\n{m.get('content')}"
-                                )
-                                for m in matches
-                            ]
-                        )
-                        tool_outputs.append(
-                            f"透過 `search_knowledge_base(query='{search_query}')` 執行混合檢索（關鍵字 + 向量 + RRF + AI 重排序）成功找到以下 {len(matches)} 個最相關文件段落：\n\n{formatted_chunks}"
-                        )
-                    else:
-                        tool_outputs.append(
-                            f"透過 `search_knowledge_base(query='{search_query}')` 查詢，知識庫中未找到超過相似度門檻的相關段落。"
-                        )
-
-            # 第二階段：將檢索到的知識庫段落注入上下文，串流生成最終回答（含防截斷保護）
-            synthesis_messages = list(history_messages[:-1]) + [
-                {
-                    "role": "user",
-                    "content": (
-                        f"【知識庫檢索結果】\n{chr(10).join(tool_outputs)}\n\n"
-                        f"---\n請根據上方檢索到的文件內容，完整且精準地回答我的問題（所有「⚡關鍵字精準命中行」提到的得獎人或項目都必須完整列出，不可遺漏）：\n{history_messages[-1]['content']}"
-                    ),
+            elif tool_name == "query_structured_database":
+                natural_query = args.get("natural_query") or history_messages[-1]["content"]
+                yield {
+                    "type": "tool_start",
+                    "tool": "query_structured_database",
+                    "query": natural_query,
+                    "category_filter": category_filter,
+                    "document_id_filter": document_id_filter,
                 }
-            ]
-            async for text_piece in stream_completion_with_guard(synthesis_messages):
-                yield {"type": "delta", "content": text_piece}
-            return
+                sql_res = await execute_structured_sql_tool(
+                    user=user,
+                    natural_query=natural_query,
+                    document_id_filter=document_id_filter,
+                    category_filter=category_filter,
+                )
+                if sql_res.get("source_card"):
+                    retrieved_sources.append(sql_res["source_card"])
+                yield {
+                    "type": "tool_end",
+                    "tool": "query_structured_database",
+                    "query": natural_query,
+                    "sources": retrieved_sources,
+                }
+                tool_outputs.append(
+                    f"透過 `query_structured_database(natural_query='{natural_query}')` 執行 Text-to-SQL 結構化數據查詢結果如下：\n\n{sql_res.get('summary_markdown')}"
+                )
 
-        elif choice_msg.content:
-            yield {"type": "delta", "content": choice_msg.content}
-            return
+            elif tool_name == "search_web_fallback":
+                web_query = args.get("query") or history_messages[-1]["content"]
+                yield {
+                    "type": "tool_start",
+                    "tool": "search_web_fallback",
+                    "query": web_query,
+                }
+                web_res = await execute_web_search_tool(
+                    query=web_query,
+                    max_results=5,
+                    fallback_reason="Multi-Tool Agent 主動調用外部即時網路搜索",
+                )
+                retrieved_sources.extend(web_res.get("source_cards", []))
+                yield {
+                    "type": "tool_end",
+                    "tool": "search_web_fallback",
+                    "query": web_query,
+                    "sources": retrieved_sources,
+                }
+                tool_outputs.append(
+                    f"透過 `search_web_fallback(query='{web_query}')` 執行外部即時網路搜索結果如下：\n\n{web_res.get('formatted_context')}"
+                )
 
-    # 若尚未上傳任何文件，直接串流呼叫 Gemini（含防截斷保護）
+        # 第二階段：將多工具檢索結果注入上下文，串流生成最終回答（含防截斷保護与來源歸因）
+        synthesis_messages = list(history_messages[:-1]) + [
+            {
+                "role": "user",
+                "content": (
+                    f"【多工具代理（Multi-Tool Agent）檢索與分析結果】\n{chr(10).join(tool_outputs)}\n\n"
+                    f"---\n請根據上方工具回傳的資料，完整且精準地回答我的問題：\n"
+                    f"1. 若包含「⚡關鍵字精準命中行」，所有提到的得獎人或項目都必須完整列出，不可遺漏（相鄰段落重疊之同一人同一獎項請自動去重只列一次）。\n"
+                    f"2. 請清楚標註資訊來源歸因（例如：『📄 來源：內部知識庫文件』、『🗄️ 來源：Text-to-SQL 結構化統計』或『🌐 來源：外部網路搜尋』並附上外部網址連結）。\n\n"
+                    f"使用者問題：{history_messages[-1]['content']}"
+                ),
+            }
+        ]
+        async for text_piece in stream_completion_with_guard(synthesis_messages):
+            yield {"type": "delta", "content": text_piece}
+        return
+
+    elif choice_msg.content:
+        yield {"type": "delta", "content": choice_msg.content}
+        return
+
     async for text_piece in stream_completion_with_guard(history_messages):
         yield {"type": "delta", "content": text_piece}
 

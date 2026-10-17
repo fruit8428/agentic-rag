@@ -83,6 +83,18 @@ def _build_default_sql_plan(natural_query: str) -> StructuredSqlQueryPlanSchema:
     )
 
 
+def normalize_entity_keyword(raw_kw: str) -> str:
+    """
+    將使用者或 LLM 輸入的社團/專有名詞正規化為文件中的核心字詞。
+    例如：『松青社』、『台北松青扶輪社』 -> 『松青』；『民生社』 -> 『民生』。
+    因為扶輪社表揚名單表格中的「社名」欄位通常省略「社」字（如：04-4 松青、04-3 民生）。
+    """
+    s = raw_kw.strip()
+    s = re.sub(r"^(臺北市|台北市|新北市|國際扶輪\d*地區)?", "", s).strip()
+    s = re.sub(r"(扶輪社|社)$", "", s).strip()
+    return s if len(s) >= 2 else raw_kw.strip()
+
+
 @traceable(name="generate_text_to_sql_plan", run_type="llm")
 async def generate_sql_plan(natural_query: str) -> StructuredSqlQueryPlanSchema:
     """使用 Gemini + Pydantic StructuredSqlQueryPlanSchema 將自然語言轉為結構化查詢計劃與 SQL。"""
@@ -91,6 +103,8 @@ async def generate_sql_plan(natural_query: str) -> StructuredSqlQueryPlanSchema:
         "資料庫包含以下主要結構：\n"
         "1. `user_documents_analytics(document_id, user_id, filename, status, category, event_or_year, total_chunks, total_characters, updated_at)`\n"
         "2. `document_chunks(id, document_id, user_id, chunk_index, content, metadata)`\n"
+        "【重要欄位規則】：文件中的扶輪社名欄位皆省略『社』字（例如『松青社』在資料庫中記載為『04-4 松青』，『民生社』記載為『04-3 民生』）。"
+        "因此在設定 `filter_keywords` 與 `sql_preview` 的 `ILIKE` 條件時，請務必去掉尾部的『社』或『扶輪社』（例如填寫 `'松青'`、`'民生'`），才能 100% 命中社友的得獎紀錄！\n"
         "請根據使用者的自然語言問題，輸出嚴格符合 JSON Schema 的結構化查詢計劃與等效 SQL 語句。"
     )
     for model_name in [settings.LLM_MODEL, "gemini-3.5-flash", "gemini-3.5-flash-lite"]:
@@ -106,6 +120,13 @@ async def generate_sql_plan(natural_query: str) -> StructuredSqlQueryPlanSchema:
             )
             parsed = resp.choices[0].message.parsed
             if parsed:
+                # 強制正規化所有 filter_keywords，確保「松青社」自動轉為「松青」
+                normalized_kws = []
+                for kw in parsed.filter_keywords:
+                    core = normalize_entity_keyword(kw)
+                    if core and core not in normalized_kws:
+                        normalized_kws.append(core)
+                parsed.filter_keywords = normalized_kws
                 return parsed
         except Exception:
             continue
@@ -184,11 +205,25 @@ async def execute_structured_sql_tool(
             }
         )
 
-    # 3. 若有指定關鍵詞或詢問明細統計，掃描所有分塊並對重複列自動去重
-    keywords = [kw.strip() for kw in plan.filter_keywords if len(kw.strip()) >= 2]
+    # 3. 若有指定關鍵詞或詢問明細統計，先正規化核心關鍵字（如「松青社」->「松青」），再掃描所有分塊並對重複列自動去重
+    raw_keywords = [kw.strip() for kw in plan.filter_keywords if len(kw.strip()) >= 2]
+    # 若 LLM 未提取出關鍵詞但問題中有「XX社」，自動從問題補充提取
+    if not raw_keywords:
+        club_matches = re.findall(r"([\u4e00-\u9fa5]{2,4})社", natural_query)
+        for cm in club_matches:
+            core = normalize_entity_keyword(cm)
+            if core and core not in raw_keywords and core not in ("請問", "哪些", "什麼", "目前"):
+                raw_keywords.append(core)
+
+    keywords: list[str] = []
+    for rk in raw_keywords:
+        core_k = normalize_entity_keyword(rk)
+        if core_k and core_k not in keywords:
+            keywords.append(core_k)
+
     matched_lines_dedup: list[str] = []
     seen_norm_lines: set[str] = set()
-    keyword_group_counts: dict[str, int] = {kw: 0 for kw in keywords}
+    keyword_group_rows: dict[str, list[str]] = {kw: [] for kw in keywords}
 
     for row in doc_analytics_rows:
         did = row["document_id"]
@@ -200,23 +235,19 @@ async def execute_structured_sql_tool(
                 line = raw_line.strip()
                 if len(line) < 4:
                     continue
-                # 排除純分隔線
                 if re.match(r"^[\|\-\:\s]+$", line):
                     continue
                 if keywords:
-                    hit_any = False
-                    for kw in keywords:
-                        if kw.lower() in line.lower():
-                            hit_any = True
-                    if not hit_any:
+                    hit_kws = [kw for kw in keywords if kw.lower() in line.lower()]
+                    if not hit_kws:
                         continue
                     norm_line = re.sub(r"\s+", " ", line)
                     if norm_line not in seen_norm_lines:
                         seen_norm_lines.add(norm_line)
-                        matched_lines_dedup.append(f"[{fname} #段落{c_idx + 1}] {line}")
-                        for kw in keywords:
-                            if kw.lower() in line.lower():
-                                keyword_group_counts[kw] = keyword_group_counts.get(kw, 0) + 1
+                        formatted_entry = f"[{fname} #段落{c_idx + 1}] {norm_line}"
+                        matched_lines_dedup.append(formatted_entry)
+                        for hk in hit_kws:
+                            keyword_group_rows[hk].append(formatted_entry)
 
     # 4. 組裝結構化報表 Markdown
     md_sections = [
@@ -243,29 +274,58 @@ async def execute_structured_sql_tool(
         md_sections.append(f"- **各類別文件數量分布**：{cat_summary}")
 
     if keywords:
-        kw_stats_str = "、".join([f"「{k}」共命中 **{v}** 筆不重複紀錄" for k, v in keyword_group_counts.items()])
-        md_sections.append(f"\n#### 🔍 2. 全文件結構化條件篩選與聚合統計（{kw_stats_str}）")
-        if matched_lines_dedup:
-            md_sections.append(
-                "以下為跨全文件所有段落掃描並去除相鄰分塊重疊後的完整明細列：\n"
-                + "\n".join([f"- {ln}" for ln in matched_lines_dedup[:60]])
+        kw_stats_parts = []
+        for k, rows in keyword_group_rows.items():
+            member_counts: dict[str, int] = {}
+            for r_line in rows:
+                m_person = re.search(r"\b\d{2}-\d+\s+\S+\s+([\u4e00-\u9fa5]{2,4})\b", r_line)
+                if m_person:
+                    pname = m_person.group(1)
+                    member_counts[pname] = member_counts.get(pname, 0) + 1
+            if member_counts:
+                kw_stats_parts.append(
+                    f"「{k}社（核心詞：{k}）」共 **{len(rows)} 筆得獎紀錄**（涵蓋 **{len(member_counts)} 位得獎社友**）"
+                )
+            else:
+                kw_stats_parts.append(f"「{k}（{k}社）」共命中 **{len(rows)} 筆紀錄**")
+
+        kw_stats_str = "；".join(kw_stats_parts)
+        md_sections.append(f"\n#### 🔍 2. 全文件結構化條件篩選與社友得獎筆數統計（{kw_stats_str}）")
+        for k, rows in keyword_group_rows.items():
+            member_counts: dict[str, int] = {}
+            for r_line in rows:
+                m_person = re.search(r"\b\d{2}-\d+\s+\S+\s+([\u4e00-\u9fa5]{2,4})\b", r_line)
+                if m_person:
+                    pname = m_person.group(1)
+                    member_counts[pname] = member_counts.get(pname, 0) + 1
+            member_breakdown = (
+                "（得獎社友統計："
+                + "、".join([f"{p} {c}筆" for p, c in member_counts.items()])
+                + "）"
+                if member_counts
+                else ""
             )
-        else:
-            md_sections.append("- 在知識庫結構化掃描中未找到符合上述關鍵詞的資料列。")
+            md_sections.append(
+                f"##### 📌 【{k}社（搜尋核心詞：`{k}`）】— 共 {len(rows)} 筆得獎紀錄 / {len(member_counts)} 位社友 {member_breakdown}："
+            )
+            if rows:
+                md_sections.append("\n".join([f"{idx + 1}. {ln}" for idx, ln in enumerate(rows)]))
+            else:
+                md_sections.append("- 未找到符合此關鍵詞的得獎紀錄。")
 
     summary_markdown = "\n\n".join(md_sections)
 
     source_card = {
         "filename": "PostgreSQL 結構化統計視圖 (user_documents_analytics)",
         "category": "Text-to-SQL 結構化查詢",
-        "event_or_year": f"掃描 {len(doc_analytics_rows)} 份文件",
+        "event_or_year": f"掃描 {len(doc_analytics_rows)} 份文件 / 命中 {len(matched_lines_dedup)} 筆紀錄",
         "chunk_index": 0,
         "content": summary_markdown,
         "similarity": 1.0,
         "match_type": "sql",
         "sql_query": plan.sql_preview,
         "rerank_score": 1.0,
-        "rerank_reason": f"Text-to-SQL 結構化數據查詢：{plan.explanation}",
+        "rerank_reason": f"Text-to-SQL 結構化數據查詢：{plan.explanation}（共命中 {len(matched_lines_dedup)} 筆不重複紀錄）",
     }
 
     return {

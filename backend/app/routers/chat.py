@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -520,8 +520,8 @@ async def run_agentic_rag_turn(
                 }
                 web_res = await execute_web_search_tool(
                     query=web_query,
-                    max_results=5,
-                    fallback_reason="Multi-Tool Agent 主動調用外部即時網路搜索",
+                    max_results=8,
+                    fallback_reason="Multi-Tool Agent 主動調用外部即時網路搜索（DuckDuckGo + Google News RSS + 維基百科）",
                 )
                 retrieved_sources.extend(web_res.get("source_cards", []))
                 yield {
@@ -542,7 +542,7 @@ async def run_agentic_rag_turn(
                     f"【多工具代理（Multi-Tool Agent）檢索與分析結果】\n{chr(10).join(tool_outputs)}\n\n"
                     f"---\n請根據上方工具回傳的資料，完整且精準地回答我的問題：\n"
                     f"1. 若包含「⚡關鍵字精準命中行」，所有提到的得獎人或項目都必須完整列出，不可遺漏（相鄰段落重疊之同一人同一獎項請自動去重只列一次）。\n"
-                    f"2. 請清楚標註資訊來源歸因（例如：『📄 來源：內部知識庫文件』、『🗄️ 來源：Text-to-SQL 結構化統計』或『🌐 來源：外部網路搜尋』並附上外部網址連結）。\n\n"
+                    f"2. 請清楚標註資訊來源歸因（例如：『📄 來源：內部知識庫文件』、『🗄️ 來源：Text-to-SQL 結構化統計』或『🌐 來源：外部網路搜尋（清楚分開列出 🔍 DuckDuckGo 網頁搜尋、📰 Google News 台灣即時新聞 RSS、📖 中文維基百科 等各管道重點與連結）』）。\n\n"
                     f"使用者問題：{history_messages[-1]['content']}"
                 ),
             }
@@ -613,7 +613,16 @@ async def chat_stream(
     )
     db_messages = history_res.data or []
 
-    openai_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    tw_tz = timezone(timedelta(hours=8))
+    now_tw = datetime.now(tw_tz)
+    weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    now_str = f"{now_tw.strftime('%Y年%m月%d日 %H:%M:%S')} ({weekdays[now_tw.weekday()]})"
+    dynamic_system_prompt = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"【系統即時時鐘】：目前台灣標準時間（UTC+8）為 **{now_str}**。若使用者詢問現在幾點或今天日期，請直接根據此精確時間回答。"
+    )
+
+    openai_messages = [{"role": "system", "content": dynamic_system_prompt}]
     for msg in db_messages:
         if msg["role"] in ("user", "assistant") and (msg.get("content") or "").strip():
             openai_messages.append({"role": msg["role"], "content": msg["content"]})

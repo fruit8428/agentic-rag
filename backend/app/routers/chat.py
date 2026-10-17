@@ -16,6 +16,7 @@ from app.services.additional_tools import (
     execute_structured_sql_tool,
     execute_web_search_tool,
 )
+from app.services.subagent import execute_isolated_subagent
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -26,19 +27,22 @@ FALLBACK_MODELS = [
     "gemini-3-flash-preview",
 ]
 
-SYSTEM_PROMPT = """你是一個專業、友善且樂於助人的多工具 Agentic RAG AI 助理（基於 Google Gemini 驅動）。
+SYSTEM_PROMPT = """你是一個專業、友善且樂於助人的多工具與階層式子代理 Agentic RAG AI 助理（基於 Google Gemini 驅動）。
 請使用繁體中文回答使用者的問題，保持結構清晰、排版易讀（善用 Markdown 標題、清單與表格）。
 
-【多工具代理（Multi-Tool Agent）路由守則】：
-1. **工具 A：`search_knowledge_base`（混合搜索 + RRF + AI 重排序）**
-   - 當用戶詢問任何具體文件內容、特定扶輪社得獎名單（如松青社、民生社）、個人獲獎紀錄、插件功能、會議集合時間或領獎注意事項時，請優先呼叫此工具。
+【多工具與階層式子代理（Multi-Tool & Sub-Agent）路由守則】：
+1. **工具 A：`search_knowledge_base`（模組 6：混合搜索 + RRF + AI 重排序）**
+   - 當用戶詢問單一具體問題、特定扶輪社得獎名單（如松青社、民生社）、個人獲獎紀錄、插件功能或單一項目細節時，優先呼叫此工具。
    - `query` 請填寫最核心的專有名詞或關鍵字（例如問「請問民生社有誰得獎」，`query` 填「民生」）。
-   - 若檢索結果有「⚡關鍵字精準命中行」，請完整列出每一筆資料（若相鄰段落重疊同一人同一獎項請自動去重只列一次；不同獎項則分開列出），包含：分區與社名、姓名、Nickname（稱號）、獎項名稱、頒獎時段、備註。
+   - 若檢索結果有「⚡關鍵字精準命中行」，請完整列出每一筆資料（相鄰段落重疊之同一人同一獎項自動去重只列一次；不同獎項則分開列出）。
 2. **工具 B：`query_structured_database`（模組 7：Text-to-SQL 結構化數據與全表統計查詢）**
-   - 當用戶詢問「知識庫目前共有幾份文件？各分類有幾份？總共有幾個分塊？」或需要「跨整份文件進行結構化筆數統計、各社得獎總筆數比較、清單盤點」時，請呼叫此工具執行 PostgreSQL 結構化分析。
+   - 當用戶明確要求「用 SQL 統計」、「知識庫共有幾份文件、幾個分塊？」或「統計特定一兩個社團的得獎筆數比較」時，呼叫此工具執行 PostgreSQL 結構化分析。
 3. **工具 C：`search_web_fallback`（模組 7：即時網路搜索與外部資訊回退）**
-   - 當用戶詢問「即時新聞、外部公開資訊、國際扶輪全球年度資訊、一般知識」，或當問題明顯不在用戶上傳的私有文件中時，請呼叫此工具上網檢索。
-   - **可信度來源歸因（Attribution for Trust）**：回答時請明確區分並標註哪些內容來自「📄 內部知識庫文件」、哪些來自「🗄️ 結構化資料庫統計」、哪些來自「🌐 外部網路搜尋（並附上來源媒體與連結）」。
+   - 當用戶詢問「即時新聞、今天天氣如何、外部公開網站資訊」，或問題明顯不在私有知識庫文件中時，呼叫此工具上網檢索。
+4. **工具 D：`delegate_to_document_subagent`（模組 8：委派具備獨立隔離上下文的全文件深度分析子代理）**
+   - 當用戶提出「全文件深度分析」、「派子代理分析」、「整份文件有哪些獎項與頒獎時段流程總表？」、「分析某整個分區（如第四分區 04-1～04-7）各社得獎分布」或「跨全文件章節綜合報告」時，請務必呼叫此工具，將全文件掃描任務委派給具備獨立隔離上下文的子代理（`DocumentAnalystSubAgent`）執行！
+5. **可信度來源歸因（Attribution for Trust）**：
+   - 回答時請明確標註資訊來源歸因（『📄 來源：內部知識庫混合檢索』、『🗄️ 來源：Text-to-SQL 結構化統計』、『🌐 來源：外部網路搜尋』或『🤖 來源：隔離上下文子代理全文件深度分析』）。
 """
 
 RAG_TOOLS = [
@@ -67,7 +71,7 @@ RAG_TOOLS = [
         "type": "function",
         "function": {
             "name": "query_structured_database",
-            "description": "模組 7 Text-to-SQL 結構化數據查詢工具：當用戶詢問知識庫文件總數、各分類文件統計、分塊與字數統計，或需要跨全文件所有段落統計特定社團/獎項的總筆數時呼叫。",
+            "description": "模組 7 Text-to-SQL 結構化數據查詢工具：當用戶詢問知識庫文件總數、各分類文件統計、分塊與字數統計，或要求用 SQL 統計特定社團的得獎筆數時呼叫。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,16 +88,37 @@ RAG_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_web_fallback",
-            "description": "模組 7 即時網路搜索工具：當用戶詢問外部即時新聞、公開網路資訊，或私有知識庫文件中沒有相關答案時呼叫此工具上網搜尋。",
+            "description": "模組 7 即時網路搜索工具：當用戶詢問外部即時新聞、今天天氣如何、公開網路資訊，或私有知識庫文件中沒有相關答案時呼叫此工具上網搜尋。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "要在網際網路上搜尋的關鍵字（例如：『國際扶輪 3481 地區 最新活動』或『AI Agent RAG 最新趨勢』）",
+                        "description": "要在網際網路上搜尋的關鍵字（例如：『國際扶輪 3481 地區 最新活動』或『今天天氣如何』）",
                     }
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delegate_to_document_subagent",
+            "description": "模組 8 隔離上下文子代理委派工具：當用戶要求『派子代理』、『全文件深度分析』、『整份文件的所有頒獎時段與獎項總表』、『某分區（如第四分區）各社得獎全貌分析』或『跨章節綜合比較報告』時呼叫此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_description": {
+                        "type": "string",
+                        "description": "主代理委派給全文件深度分析子代理的完整任務描述",
+                    },
+                    "focus_scope": {
+                        "type": "string",
+                        "description": "選填。子代理掃描全文件時要特別聚焦的分區、社團或主題（例如：『第四分區』、『全體頒獎時段與獎項』）",
+                    },
+                },
+                "required": ["task_description"],
             },
         },
     },
@@ -534,15 +559,42 @@ async def run_agentic_rag_turn(
                     f"透過 `search_web_fallback(query='{web_query}')` 執行外部即時網路搜索結果如下：\n\n{web_res.get('formatted_context')}"
                 )
 
-        # 第二階段：將多工具檢索結果注入上下文，串流生成最終回答（含防截斷保護与來源歸因）
+            elif tool_name == "delegate_to_document_subagent":
+                task_desc = args.get("task_description") or history_messages[-1]["content"]
+                focus_scope = args.get("focus_scope")
+                yield {
+                    "type": "tool_start",
+                    "tool": "delegate_to_document_subagent",
+                    "query": f"{task_desc[:40]}... ({focus_scope or '全文件隔離掃描'})",
+                }
+                sub_res = await execute_isolated_subagent(
+                    user=user,
+                    task_description=task_desc,
+                    focus_scope=focus_scope,
+                    document_id_filter=document_id_filter,
+                    category_filter=category_filter,
+                )
+                if sub_res.get("source_card"):
+                    retrieved_sources.append(sub_res["source_card"])
+                yield {
+                    "type": "tool_end",
+                    "tool": "delegate_to_document_subagent",
+                    "query": task_desc,
+                    "sources": retrieved_sources,
+                }
+                tool_outputs.append(
+                    f"主代理已委派『全文件深度分析子代理 (DocumentAnalystSubAgent)』於獨立隔離上下文完成全文件掃描與彙整，回傳精華報告如下：\n\n{sub_res.get('distilled_report')}"
+                )
+
+        # 第二階段：將多工具或子代理檢索結果注入上下文，串流生成最終回答（含防截斷保護与來源歸因）
         synthesis_messages = list(history_messages[:-1]) + [
             {
                 "role": "user",
                 "content": (
-                    f"【多工具代理（Multi-Tool Agent）檢索與分析結果】\n{chr(10).join(tool_outputs)}\n\n"
-                    f"---\n請根據上方工具回傳的資料，完整且精準地回答我的問題：\n"
-                    f"1. 若包含「⚡關鍵字精準命中行」，所有提到的得獎人或項目都必須完整列出，不可遺漏（相鄰段落重疊之同一人同一獎項請自動去重只列一次）。\n"
-                    f"2. 請清楚標註資訊來源歸因（例如：『📄 來源：內部知識庫文件』、『🗄️ 來源：Text-to-SQL 結構化統計』或『🌐 來源：外部網路搜尋（清楚分開列出 🔍 DuckDuckGo 網頁搜尋、📰 Google News 台灣即時新聞 RSS、📖 中文維基百科 等各管道重點與連結）』）。\n\n"
+                    f"【多工具與階層式子代理（Multi-Tool & Sub-Agent）檢索與分析結果】\n{chr(10).join(tool_outputs)}\n\n"
+                    f"---\n請根據上方工具或子代理回傳的資料，完整且精準地回答我的問題：\n"
+                    f"1. 若包含「⚡關鍵字精準命中行」或子代理聚焦分區名單，所有提到的得獎人或項目都必須完整列出，不可遺漏（相鄰段落重疊之同一人同一獎項請自動去重只列一次）。\n"
+                    f"2. 請清楚標註資訊來源歸因（例如：『📄 來源：內部知識庫文件』、『🗄️ 來源：Text-to-SQL 結構化統計』、『🌐 來源：外部網路搜尋』或『🤖 來源：隔離上下文子代理 (DocumentAnalystSubAgent) 全文件深度分析』）。\n\n"
                     f"使用者問題：{history_messages[-1]['content']}"
                 ),
             }

@@ -58,4 +58,9 @@
 - [x] 4. 升級前端聊天介面（`frontend/src/components/ChatView.tsx` 與 `frontend/src/App.tsx`：顯示 `🗄️ Text-to-SQL 結構化統計` SQL 語法區塊、`🌐 外部網路搜尋來源` 可點擊外部連結與多工具範例提問按鈕）
 - [x] 5. 端到端驗證測試與 GitHub 同步更新
 
-
+### 模組 8：子代理（Sub-Agents — 具備隔離上下文的全文件深度分析代理與階層式推理展示）
+- [x] 1. 規劃並建立模組 8 實施計劃（`.agent/plans/8.子代理與隔離上下文.md`）
+- [x] 2. 建立隔離上下文全文件深度分析子代理服務（`backend/app/services/subagent.py`：Pydantic `SubAgentReasoningSchema` + 3 大嵌套工具 `subtool_inspect_document_scope`、`subtool_scan_full_document_structure`、`subtool_isolated_llm_synthesis`，支援全文件 51 分塊 68,013 字完整掃描與 87.6% 主對話上下文壓縮保護）
+- [x] 3. 升級主代理四大工具智慧調度（`backend/app/routers/chat.py`：註冊 `delegate_to_document_subagent` 並串接混合檢索、Text-to-SQL、外部即時網路搜尋與全文件子代理）
+- [x] 4. 升級前端階層式代理推理視圖（`frontend/src/components/ChatView.tsx` 與 `frontend/src/App.tsx`：新增「🤖 模組 8：階層式子代理推理與嵌套工具調用樹 (Hierarchical Sub-Agent Trace)」，展示主代理委派原因、上下文壓縮率、子代理逐步推理與 3 階段嵌套工具卡片）
+- [x] 5. 端到端驗證測試與 GitHub 完整專案部署（全 8 模組完課 🎉）

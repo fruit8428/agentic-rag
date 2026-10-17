@@ -26,6 +26,27 @@ interface ThreadItem {
   updated_at: string
 }
 
+interface SubAgentNestedToolCall {
+  step: number
+  tool_name: string
+  tool_label: string
+  input: string
+  output_summary: string
+}
+
+interface SubAgentTrace {
+  subagent_name: string
+  main_agent_reason: string
+  subagent_reasoning_steps: string[]
+  nested_tool_calls: SubAgentNestedToolCall[]
+  context_stats: {
+    raw_scanned_chars: number
+    raw_scanned_chunks: number
+    distilled_chars: number
+    saved_percentage: number
+  }
+}
+
 interface SourceChunk {
   filename: string
   category?: string
@@ -33,7 +54,7 @@ interface SourceChunk {
   chunk_index: number
   content: string
   similarity: number
-  match_type?: 'hybrid' | 'keyword' | 'vector' | 'sql' | 'web'
+  match_type?: 'hybrid' | 'keyword' | 'vector' | 'sql' | 'web' | 'subagent'
   keyword_rank?: number | null
   vector_rank?: number | null
   vector_similarity?: number | null
@@ -42,6 +63,7 @@ interface SourceChunk {
   rerank_reason?: string | null
   sql_query?: string | null
   web_url?: string | null
+  subagent_trace?: SubAgentTrace | null
 }
 
 interface DocOption {
@@ -451,17 +473,17 @@ export function ChatView({ accessToken }: ChatViewProps) {
                 <Bot className="w-7 h-7" />
               </div>
               <h2 className="text-xl font-semibold text-white mb-2">
-                歡迎使用你的多工具 Agentic RAG 助理
+                歡迎使用你的全功能 Agentic RAG 助理（大師課完整版）
               </h2>
               <p className="text-sm text-slate-400 leading-relaxed mb-6">
-                目前已啟用 <strong>模組 7：多工具代理（混合檢索 + Text-to-SQL 結構化統計 + 網路搜索回退）</strong>。Agent 會自動根據你的問題在「內部文件段落檢索」、「資料庫 SQL 結構化盤點統計」與「外部即時網路搜尋」之間智慧路由！
+                目前已啟用 <strong>模組 1 ～ 模組 8 全套架構（混合檢索 + RRF + Rerank + Text-to-SQL + 三合一網路搜尋 + 隔離上下文子代理 Sub-Agents）</strong>。點擊下方按鈕即可一鍵體驗四大核心代理能力！
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
                 {[
                   '請問松青社有誰得獎？',
                   '幫我用 SQL 統計目前知識庫共有幾份文件、幾個分塊，以及松青社與民生社的得獎筆數？',
                   '請上網搜尋國際扶輪 3481 地區的官方網站與最新活動資訊？',
-                  '請問第三全會有誰獲得超我服務獎？',
+                  '請派子代理對整份年會頒獎名單進行全文件深度分析，整理第三全會與第四全會的所有獎項梯次、集合時間，並分析第四分區（04-1～04-7）各社的得獎分布！',
                 ].map((sample) => (
                   <button
                     key={sample}
@@ -500,7 +522,9 @@ export function ChatView({ accessToken }: ChatViewProps) {
                           <div className="px-3.5 py-2.5 flex items-center gap-2 text-indigo-300">
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
                             <span>
-                              {msg.toolName === 'query_structured_database'
+                              {msg.toolName === 'delegate_to_document_subagent'
+                                ? '🤖 主代理正在委派「全文件深度分析子代理 (Isolated Sub-Agent)」於獨立隔離上下文執行：'
+                                : msg.toolName === 'query_structured_database'
                                 ? 'Agent 正在執行 Text-to-SQL 結構化數據與全表統計查詢：'
                                 : msg.toolName === 'search_web_fallback'
                                 ? 'Agent 正在執行外部即時網路搜索 (Web Search Fallback)：'
@@ -518,12 +542,15 @@ export function ChatView({ accessToken }: ChatViewProps) {
                               <div className="flex items-center gap-2">
                                 <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
                                 <span>
-                                  {msg.sources?.some((s) => s.match_type === 'sql')
+                                  {msg.sources?.some((s) => s.match_type === 'subagent')
+                                    ? '🤖 階層式子代理完成全文件隔離分析（點擊展開「主代理委派 ➔ 子代理嵌套工具鏈 ➔ 推理過程」）'
+                                    : msg.sources?.some((s) => s.match_type === 'sql')
                                     ? '🗄️ Text-to-SQL 結構化數據查詢完成'
                                     : msg.sources?.some((s) => s.match_type === 'web')
                                     ? `🌐 網路搜索回退：已檢索 ${msg.sources?.length} 筆外部網頁來源`
                                     : `📚 混合檢索 + RRF + AI 重排序：已精選 ${msg.sources?.length} 個最佳段落`}
-                                  （點擊{isExpanded ? '收合' : '查看工具指標與來源明細'}）
+                                  {!msg.sources?.some((s) => s.match_type === 'subagent') &&
+                                    `（點擊${isExpanded ? '收合' : '查看工具指標與來源明細'}）`}
                                 </span>
                               </div>
                               {isExpanded ? (
@@ -534,18 +561,20 @@ export function ChatView({ accessToken }: ChatViewProps) {
                             </button>
 
                             {isExpanded && (
-                              <div className="p-3 border-t border-slate-800 space-y-2.5 bg-slate-950/80 max-h-80 overflow-y-auto">
+                              <div className="p-3 border-t border-slate-800 space-y-2.5 bg-slate-950/80 max-h-96 overflow-y-auto">
                                 {msg.sources?.map((src, idx) => {
                                   const matchType = src.match_type || 'vector'
                                   return (
                                     <div
                                       key={idx}
-                                      className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5"
+                                      className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-2"
                                     >
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-indigo-300 font-medium">
                                         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                           <span className="truncate">
-                                            {matchType === 'sql'
+                                            {matchType === 'subagent'
+                                              ? `${src.filename}`
+                                              : matchType === 'sql'
                                               ? `🗄️ ${src.filename}`
                                               : matchType === 'web'
                                               ? `${src.filename}`
@@ -563,9 +592,13 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                           )}
                                         </div>
 
-                                        {/* 模組 6 & 7：檢索與多工具來源徽章 */}
+                                        {/* 模組 6、7、8：檢索、多工具與子代理來源徽章 */}
                                         <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                          {matchType === 'sql' ? (
+                                          {matchType === 'subagent' ? (
+                                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px]">
+                                              🤖 隔離上下文子代理 (Isolated Sub-Agent)
+                                            </span>
+                                          ) : matchType === 'sql' ? (
                                             <span className="px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 text-[10px]">
                                               🗄️ Text-to-SQL 結構化統計
                                             </span>
@@ -593,7 +626,7 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                             </span>
                                           )}
 
-                                          {matchType !== 'sql' && matchType !== 'web' && (
+                                          {matchType !== 'sql' && matchType !== 'web' && matchType !== 'subagent' && (
                                             <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-200 text-[10px]">
                                               ✨ Rerank 精準度 {((src.rerank_score ?? src.similarity) * 100).toFixed(1)}%
                                             </span>
@@ -611,6 +644,60 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                           )}
                                         </div>
                                       </div>
+
+                                      {/* 模組 8：階層式主代理與子代理推理及嵌套工具調用展示 */}
+                                      {src.subagent_trace && (
+                                        <div className="rounded-lg bg-slate-950 border border-amber-500/30 p-3 space-y-2.5 text-[11px]">
+                                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                                            <span className="font-semibold text-amber-300">
+                                              👑 主代理 (Main Agent) ➔ 🤖 {src.subagent_trace.subagent_name}
+                                            </span>
+                                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px]">
+                                              🔒 隔離掃描 {src.subagent_trace.context_stats.raw_scanned_chars.toLocaleString()} 字 ➔ 濃縮為 {src.subagent_trace.context_stats.distilled_chars.toLocaleString()} 字（節省 {src.subagent_trace.context_stats.saved_percentage}% 主對話記憶）
+                                            </span>
+                                          </div>
+
+                                          <div className="text-slate-300 bg-slate-900/90 rounded p-2 border border-slate-800">
+                                            <strong className="text-indigo-300">🧠 主代理委派決策推理：</strong>
+                                            {src.subagent_trace.main_agent_reason}
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            <div className="font-medium text-amber-200">
+                                              🛠️ 子代理內部嵌套工具調用鏈（Nested Tool Calls in Isolated Context）：
+                                            </div>
+                                            <div className="pl-3 border-l-2 border-amber-500/40 space-y-1.5">
+                                              {src.subagent_trace.nested_tool_calls.map((nt) => (
+                                                <div
+                                                  key={nt.step}
+                                                  className="p-2 rounded bg-slate-900/80 border border-slate-800 space-y-0.5"
+                                                >
+                                                  <div className="flex items-center justify-between text-amber-300 font-mono text-[10px]">
+                                                    <span>
+                                                      Step {nt.step}: {nt.tool_name} ({nt.tool_label})
+                                                    </span>
+                                                    <span className="text-slate-400">參數：{nt.input}</span>
+                                                  </div>
+                                                  <div className="text-slate-300 text-[10px]">
+                                                    ↳ 執行結果：{nt.output_summary}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+
+                                          <div className="space-y-1">
+                                            <div className="font-medium text-indigo-300">
+                                              💭 子代理獨立推理過程（Sub-Agent Reasoning Steps）：
+                                            </div>
+                                            <ul className="list-disc list-inside text-slate-300 space-y-0.5 text-[10px]">
+                                              {src.subagent_trace.subagent_reasoning_steps.map((st, sIdx) => (
+                                                <li key={sIdx}>{st}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        </div>
+                                      )}
 
                                       {src.sql_query && (
                                         <pre className="text-[10px] text-fuchsia-200 bg-slate-950 border border-fuchsia-500/30 rounded p-2 overflow-x-auto font-mono">

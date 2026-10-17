@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
+  }
+}
+
+/* Markdown 表格與排版美化（針對 AI 聊天室回應） */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.prose thead {
+  background-color: rgba(30, 41, 59, 0.9);
+}
+
+.prose th {
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.8);
+  border-right: 1px solid rgba(51, 65, 85, 0.5);
+  white-space: nowrap;
+}
+
+.prose td {
+  padding: 0.55rem 0.85rem;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  border-right: 1px solid rgba(51, 65, 85, 0.4);
+  vertical-align: middle;
+}
+
+/* 確保表格中的分區社名、中文姓名、Nickname、獎項名稱與頒獎時段不換行 */
+.prose td:nth-child(1),
+.prose td:nth-child(2),
+.prose td:nth-child(3),
+.prose td:nth-child(4),
+.prose td:last-child {
+  white-space: nowrap;
+}
+
+.prose tr:last-child td {
+  border-bottom: none;
+}
+
+.prose th:last-child,
+.prose td:last-child {
+  border-right: none;
+}
+
+.prose tbody tr:nth-child(even) {
+  background-color: rgba(15, 23, 42, 0.45);
+}
+
+.prose tbody tr:hover {
+  background-color: rgba(79, 70, 229, 0.12);
+}
+
+.prose ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.prose h3, .prose h4 {
+  font-weight: 600;
+  color: #f8fafc;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.prose hr {
+  border-color: rgba(71, 85, 105, 0.5);
+  margin: 0.75rem 0;
+}

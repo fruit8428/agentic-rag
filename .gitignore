@@ -1,0 +1,28 @@
+# 環境變數與金鑰（絕對不要上傳到 Git）
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Python 虛擬環境與快取
+venv/
+.venv/
+backend/venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node.js 前端套件與打包產物
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+
+# macOS 系統檔
+.DS_Store

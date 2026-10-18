@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import {
   UploadCloud,
@@ -204,42 +204,6 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
-    }
-  }
-
-  // 模組 3 互動實驗室：產生測試用 Markdown 檔案以驗證「秒速去重」與「增量更新」
-  const handleRunRecordManagerDemo = async (mode: 'v1' | 'v1_dup' | 'v2_inc') => {
-    setErrorBanner(null)
-    setUploading(true)
-    try {
-      const para1 =
-        '【第一段：活動基本資訊】\n2026 國際扶輪 3481 地區年會將於 3 月 29 日（週日）在 12 樓大會廳盛大舉行。上午 08:30–11:20 為第三全會，下午 14:40–16:50 為第四全會。\n' +
-        '請各分區助理總監（AG）、社長（P）與受獎社友提前 20 分鐘至報到處領取受獎名牌並依指定座位入席。'.repeat(12)
-
-      const para2_v1 =
-        '【第二段：松青社（04-4）報到與集合提醒 - 初版 v1.0】\n松青社本次共有楊富中（AG Fruit）、林啟平（P Tony）、李瑞琦（IPP Rachel）、黃郁晴（PP Kitty）、黃世欽（PP Albert）等社友獲獎。集合地點暫定於 12 樓一號報到櫃檯前。'.repeat(
-          12
-        )
-
-      const para2_v2 =
-        '【第二段：松青社（04-4）報到與集合提醒 - 修訂版 v2.0】\n松青社本次共有楊富中（AG Fruit）、林啟平（P Tony，榮獲永久基金*1與模範貢獻獎）、李瑞琦（IPP Rachel）、黃郁晴（PP Kitty）、黃世欽（PP Albert）獲獎。最新通知：集合地點改至 12 樓貴賓室門口，並請穿著正式西裝配戴年度領帶！'.repeat(
-          12
-        )
-
-      const content =
-        mode === 'v2_inc'
-          ? `${para1}\n\n${para2_v2}`
-          : `${para1}\n\n${para2_v1}`
-
-      const blob = new Blob([content], { type: 'text/markdown' })
-      const demoFile = new File([blob], '模組3測試_松青社年會備忘錄.md', {
-        type: 'text/markdown',
-      })
-      await uploadSingleFileObject(demoFile)
-    } catch (err: any) {
-      setErrorBanner(err.message || '測試執行失敗')
-    } finally {
-      setUploading(false)
     }
   }
 

@@ -128,16 +128,17 @@ def enrich_documents_with_sync_info(user_supabase, docs: list[dict]) -> list[dic
 
 @router.get("", response_model=List[DocumentItem])
 async def list_documents(user: AuthenticatedUser = Depends(get_current_user)):
-    """取得當前用戶已上傳的所有文件列表（含模組 3~5 完整狀態與元數據）。"""
+    """取得共享知識庫中所有已上傳的文件列表（含模組 3~5 完整狀態與元數據，全體登入用戶皆可查閱）。"""
     try:
+        admin_supabase = get_admin_supabase()
         res = (
-            user.supabase.table("documents")
+            admin_supabase.table("documents")
             .select("*")
             .order("updated_at", desc=True)
             .execute()
         )
         docs = res.data or []
-        return enrich_documents_with_sync_info(user.supabase, docs)
+        return enrich_documents_with_sync_info(admin_supabase, docs)
     except Exception as e:
         err_str = str(e)
         if "relation" in err_str and "does not exist" in err_str:
@@ -181,14 +182,14 @@ async def upload_document(
     admin_supabase = get_admin_supabase()
 
     try:
-        # 檢查當前用戶是否已有同名文件或相同 SHA-256 指紋的文件
+        # 檢查共享知識庫是否已有同名文件或相同 SHA-256 指紋的文件
         existing_docs_res = (
-            user.supabase.table("documents")
+            admin_supabase.table("documents")
             .select("*")
             .order("updated_at", desc=True)
             .execute()
         )
-        existing_docs = enrich_documents_with_sync_info(user.supabase, existing_docs_res.data or [])
+        existing_docs = enrich_documents_with_sync_info(admin_supabase, existing_docs_res.data or [])
 
         # 情況 A：檢查是否與任何已完成的現有文件擁有完全相同的 SHA-256 檔案雜湊
         for ex_doc in existing_docs:
@@ -367,8 +368,9 @@ async def extract_document_metadata_endpoint(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     """模組 4：針對指定文件立即執行 AI 結構化元數據提取（標題、類別、年份、摘要、關鍵字標籤）。"""
+    admin_supabase = get_admin_supabase()
     doc_res = (
-        user.supabase.table("documents")
+        admin_supabase.table("documents")
         .select("*")
         .eq("id", document_id)
         .execute()
@@ -377,13 +379,12 @@ async def extract_document_metadata_endpoint(
         raise HTTPException(status_code=404, detail="找不到指定的文件")
 
     doc = doc_res.data[0]
-    admin_supabase = get_admin_supabase()
     await extract_and_save_document_metadata(
         admin_supabase=admin_supabase,
         doc_id=document_id,
         filename=doc.get("filename", "未知文件"),
     )
-    enriched_list = enrich_documents_with_sync_info(user.supabase, [doc])
+    enriched_list = enrich_documents_with_sync_info(admin_supabase, [doc])
     return enriched_list[0]
 
 
@@ -444,15 +445,16 @@ async def delete_document(
 ):
     """
     模組 5：完整級聯刪除（Cascade Deletion）與零孤兒向量驗證：
-    1. 統計將被級聯清除的 document_chunks 向量分塊數
-    2. 刪除 Supabase Storage 雲端儲存桶中的原始檔案
-    3. 刪除 documents 主表紀錄（自動觸發 PostgreSQL ON DELETE CASCADE 清除所有 document_chunks）
-    4. 二次驗證 document_chunks 剩餘筆數為 0，確保向量資料庫零殘留！
+    1. 僅允許文件上傳者本人刪除（防止其他共享使用者誤刪主知識庫文件）
+    2. 統計將被級聯清除的 document_chunks 向量分塊數
+    3. 刪除 Supabase Storage 雲端儲存桶中的原始檔案
+    4. 刪除 documents 主表紀錄（自動觸發 PostgreSQL ON DELETE CASCADE 清除所有 document_chunks）
+    5. 二次驗證 document_chunks 剩餘筆數為 0，確保向量資料庫零殘留！
     """
     try:
         admin_supabase = get_admin_supabase()
         doc_res = (
-            user.supabase.table("documents")
+            admin_supabase.table("documents")
             .select("*")
             .eq("id", document_id)
             .execute()
@@ -463,6 +465,11 @@ async def delete_document(
 
         if doc_res.data:
             doc_obj = doc_res.data[0]
+            if doc_obj.get("user_id") != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="權限不足：僅文件上傳者本人可刪除此共享知識庫文件",
+                )
             filename = doc_obj.get("filename", filename)
             deleted_chunks_count = doc_obj.get("chunk_count", 0)
             storage_path = doc_obj.get("storage_path")
@@ -507,8 +514,11 @@ async def delete_document(
             "storage_removed": storage_removed,
             "verified_zero_orphans": remaining_count == 0,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"刪除文件失敗: {str(e)}",
         )
+

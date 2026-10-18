@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from app.auth import AuthenticatedUser
+from app.auth import AuthenticatedUser, get_admin_supabase
 from app.config import settings
 from app.llm import llm_client
 
@@ -147,10 +147,11 @@ async def execute_structured_sql_tool(
     不受限於單次向量檢索 Top-8 段落上限。
     """
     plan = await generate_sql_plan(natural_query)
+    admin_supabase = get_admin_supabase()
 
-    # 1. 讀取當前用戶的所有已完成文件
+    # 1. 讀取共享知識庫的所有已完成文件
     docs_q = (
-        user.supabase.table("documents")
+        admin_supabase.table("documents")
         .select("id, filename, status, created_at, updated_at")
         .eq("status", "completed")
         .order("updated_at", desc=True)
@@ -165,7 +166,7 @@ async def execute_structured_sql_tool(
     chunks_by_doc: dict[str, list[dict]] = {did: [] for did in doc_ids}
     if doc_ids:
         chunks_res = (
-            user.supabase.table("document_chunks")
+            admin_supabase.table("document_chunks")
             .select("id, document_id, chunk_index, content, metadata")
             .in_("document_id", doc_ids)
             .order("chunk_index", desc=False)

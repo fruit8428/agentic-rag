@@ -694,14 +694,24 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
                           </span>
                         )}
 
-                        <button
-                          onClick={() => handleDelete(doc.id)}
-                          title="執行級聯刪除（同步清除 Storage 原檔與所有 pgvector 向量分塊）"
-                          className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>刪除</span>
-                        </button>
+                        {doc.user_id === userId ? (
+                          <button
+                            onClick={() => handleDelete(doc.id)}
+                            title="執行級聯刪除（同步清除 Storage 原檔與所有 pgvector 向量分塊）"
+                            className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>刪除</span>
+                          </button>
+                        ) : (
+                          <span
+                            title="此為全體共享知識庫文件，僅上傳者本人可刪除"
+                            className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-300 text-xs font-medium flex items-center gap-1.5"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>共享知識庫</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 

@@ -3,7 +3,7 @@ from typing import List, Optional
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from app.auth import AuthenticatedUser
+from app.auth import AuthenticatedUser, get_admin_supabase
 from app.config import settings
 from app.llm import llm_client
 from app.services.additional_tools import normalize_entity_keyword
@@ -79,12 +79,13 @@ async def execute_isolated_subagent(
     )
 
     nested_tool_calls: List[dict] = []
+    admin_supabase = get_admin_supabase()
 
     # =========================================================================
     # 嵌套工具 1：subtool_inspect_document_scope（鎖定目標文件與元數據範圍）
     # =========================================================================
     docs_q = (
-        user.supabase.table("documents")
+        admin_supabase.table("documents")
         .select("id, filename, status, created_at, updated_at")
         .eq("status", "completed")
         .order("updated_at", desc=True)
@@ -98,7 +99,7 @@ async def execute_isolated_subagent(
     chunks_by_doc: dict[str, list[dict]] = {did: [] for did in doc_ids}
     if doc_ids:
         chunks_res = (
-            user.supabase.table("document_chunks")
+            admin_supabase.table("document_chunks")
             .select("id, document_id, chunk_index, content, metadata")
             .in_("document_id", doc_ids)
             .order("chunk_index", desc=False)

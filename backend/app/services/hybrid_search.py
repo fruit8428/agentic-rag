@@ -1,9 +1,10 @@
 import json
+import math
 import re
 from typing import Dict, List, Optional
 from langsmith import traceable
 from pydantic import BaseModel, Field
-from app.auth import AuthenticatedUser
+from app.auth import AuthenticatedUser, get_admin_supabase
 from app.config import settings
 from app.llm import llm_client
 from app.services.ingestion import embed_query
@@ -52,7 +53,7 @@ def lexical_keyword_search(
     """
     軌道 A：關鍵字全文檢索（Lexical / Keyword Search）。
     針對人名、社團名（如『松青』、『民生』）、獎項名稱進行精確匹配，
-    並依命中行數與關鍵字覆蓋率排序，賦予 keyword_rank (#1, #2...)。
+    支援共享知識庫跨帳號查詢，並依命中行數與關鍵字覆蓋率排序，賦予 keyword_rank (#1, #2...)。
     """
     keywords = extract_keywords(query)
     if not keywords:
@@ -60,11 +61,12 @@ def lexical_keyword_search(
 
     raw_hits_by_cid: Dict[str, dict] = {}
     seen_hashes: set[str] = set()
+    admin_supabase = get_admin_supabase()
 
     try:
         for kw in keywords[:4]:
             q_builder = (
-                user.supabase.table("document_chunks")
+                admin_supabase.table("document_chunks")
                 .select("id, document_id, chunk_index, content, metadata")
                 .ilike("content", f"%{kw}%")
             )
@@ -144,33 +146,55 @@ def lexical_keyword_search(
     return sorted_kw
 
 
+def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 @traceable(name="track_b_dense_vector_search", run_type="retriever")
 async def dense_vector_search(
     user: AuthenticatedUser,
     query: str,
     allowed_doc_ids: Optional[set[str]],
+    doc_map: Dict[str, str],
     doc_meta_map: Dict[str, dict],
     match_threshold: float = 0.2,
     match_count: int = 10,
 ) -> List[dict]:
     """
     軌道 B：pgvector 768 維度稠密向量語意檢索（Dense Vector Semantic Search）。
-    依餘弦相似度（Cosine Similarity）排序並賦予 vector_rank (#1, #2...)。
+    支援全體登入用戶共享知識庫檢索，依餘弦相似度（Cosine Similarity）排序並賦予 vector_rank (#1, #2...)。
     """
     vec_hits: List[dict] = []
     seen_hashes: set[str] = set()
     try:
         query_vec = await embed_query(query)
-        rpc_res = user.supabase.rpc(
-            "match_document_chunks",
-            {
-                "query_embedding": query_vec,
-                "match_threshold": match_threshold,
-                "match_count": match_count * 2 if allowed_doc_ids else match_count,
-            },
-        ).execute()
+        admin_supabase = get_admin_supabase()
+        q_builder = admin_supabase.table("document_chunks").select(
+            "id, document_id, chunk_index, content, metadata, embedding"
+        )
+        target_ids = list(allowed_doc_ids) if allowed_doc_ids else list(doc_map.keys())
+        if target_ids:
+            q_builder = q_builder.in_("document_id", target_ids)
+        chunks_res = q_builder.execute()
 
-        for row in rpc_res.data or []:
+        scored_rows = []
+        for row in chunks_res.data or []:
+            raw_emb = row.get("embedding")
+            if not raw_emb:
+                continue
+            emb_vec = json.loads(raw_emb) if isinstance(raw_emb, str) else raw_emb
+            sim = _cosine_similarity(query_vec, emb_vec)
+            if sim >= match_threshold:
+                scored_rows.append((sim, row))
+
+        scored_rows.sort(key=lambda x: -x[0])
+
+        for sim, row in scored_rows:
             doc_id = row.get("document_id")
             if allowed_doc_ids and doc_id not in allowed_doc_ids:
                 continue
@@ -181,12 +205,25 @@ async def dense_vector_search(
             seen_hashes.add(sig)
 
             ext_m = doc_meta_map.get(doc_id) or {}
-            item = dict(row)
-            item["raw_content"] = raw_c
-            item["category"] = ext_m.get("category")
-            item["event_or_year"] = ext_m.get("event_or_year")
-            item["vector_similarity"] = float(row.get("similarity", 0.0))
+            item = {
+                "id": row["id"],
+                "document_id": doc_id,
+                "filename": doc_map.get(
+                    doc_id,
+                    (row.get("metadata") or {}).get("filename", "未知文件"),
+                ),
+                "chunk_index": row.get("chunk_index", 0),
+                "content": raw_c,
+                "raw_content": raw_c,
+                "metadata": row.get("metadata") or {},
+                "category": ext_m.get("category"),
+                "event_or_year": ext_m.get("event_or_year"),
+                "similarity": round(float(sim), 4),
+                "vector_similarity": round(float(sim), 4),
+            }
             vec_hits.append(item)
+            if len(vec_hits) >= match_count:
+                break
     except Exception:
         pass
 
@@ -387,8 +424,9 @@ async def execute_hybrid_rerank_search(
     allowed_doc_ids: Optional[set[str]] = None
 
     try:
+        admin_supabase = get_admin_supabase()
         docs_res = (
-            user.supabase.table("documents")
+            admin_supabase.table("documents")
             .select("id, filename, updated_at")
             .eq("status", "completed")
             .order("updated_at", desc=True)
@@ -399,7 +437,7 @@ async def execute_hybrid_rerank_search(
         doc_ids = [d["id"] for d in docs]
         if doc_ids:
             c0_res = (
-                user.supabase.table("document_chunks")
+                admin_supabase.table("document_chunks")
                 .select("document_id, metadata")
                 .in_("document_id", doc_ids)
                 .eq("chunk_index", 0)
@@ -434,6 +472,7 @@ async def execute_hybrid_rerank_search(
         user=user,
         query=query,
         allowed_doc_ids=allowed_doc_ids,
+        doc_map=doc_map,
         doc_meta_map=doc_meta_map,
         match_threshold=match_threshold,
         match_count=top_k + 4,

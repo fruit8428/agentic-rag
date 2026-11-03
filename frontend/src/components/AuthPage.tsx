@@ -67,9 +67,6 @@ export function AuthPage() {
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Agentic RAG AI 系統
           </h1>
-          <p className="text-sm text-slate-400 mt-1.5">
-            Google Gemini + Supabase + LangSmith 大師課實戰
-          </p>
         </div>
 
         {/* 切換登入 / 註冊標籤 */}

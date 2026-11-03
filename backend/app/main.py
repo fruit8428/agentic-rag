@@ -6,7 +6,7 @@ from app.routers import admin, auth_router, chat, clubs, documents, threads
 app = FastAPI(
     title="Agentic RAG Masterclass API",
     description="FastAPI + Supabase + Google Gemini + LangSmith",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(

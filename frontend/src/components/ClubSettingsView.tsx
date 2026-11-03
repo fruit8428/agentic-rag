@@ -7,7 +7,7 @@ interface ClubSettingsViewProps {
   me: MyClub
 }
 
-// 社設定：顯示所屬社，並讓社友以目前密碼更換新的社內密碼
+// 社設定：顯示所屬社，並以目前密碼更換新的社密碼（管理員則是更換管理員密碼）
 export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -15,6 +15,7 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const isAdminOnly = me.role === 'admin' && !me.club_id
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,7 +29,7 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
         method: 'POST',
         body: JSON.stringify({ current_password: current, new_password: next }),
       })
-      setSuccess(res.message || '社內密碼已更新')
+      setSuccess(res.message || '密碼已更新')
       setCurrent('')
       setNext('')
       setConfirm('')
@@ -44,7 +45,7 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">社設定</h1>
-          <p className="text-sm text-slate-400 mt-1">管理貴社的社內密碼。知道社內密碼的人即可加入並查閱貴社社內資料，請妥善保管。</p>
+          <p className="text-sm text-slate-400 mt-1">{isAdminOnly ? '更換地區管理員的登入密碼。' : '管理貴社的登入密碼。全社共用這組密碼，知道密碼的人即可登入並查閱貴社社內資料，請妥善保管。'}</p>
         </div>
 
         <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center gap-4">
@@ -53,7 +54,7 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
           </div>
           <div>
             <p className="text-xs text-slate-400">您所屬的社</p>
-            <p className="text-base font-semibold text-white">{me.club_name || '（尚未加入）'}</p>
+            <p className="text-base font-semibold text-white">{me.club_name || (isAdminOnly ? '地區辦公室（管理員帳號）' : '（尚未綁定）')}</p>
           </div>
           {me.role === 'admin' && (
             <span className="ml-auto px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium inline-flex items-center gap-1">
@@ -62,15 +63,15 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
           )}
         </div>
 
-        {me.club_id ? (
+        {(me.club_id || isAdminOnly) ? (
           <form onSubmit={handleSubmit} className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
               <KeyRound className="w-4 h-4 text-indigo-400" />
-              <span>變更社內密碼</span>
+              <span>{isAdminOnly ? '變更管理員密碼' : '變更社密碼'}</span>
             </div>
             {[
-              ['目前的社內密碼', current, setCurrent],
-              ['新的社內密碼（至少 6 個字元）', next, setNext],
+              ['目前的密碼', current, setCurrent],
+              ['新的密碼（至少 6 個字元）', next, setNext],
               ['再輸入一次新密碼', confirm, setConfirm],
             ].map(([label, value, setter], i) => (
               <label key={i} className="block space-y-1.5">
@@ -104,7 +105,7 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
             </button>
           </form>
         ) : (
-          <p className="text-sm text-slate-400">管理員帳號未隸屬任何社，如需管理各社密碼請使用「管理」分頁。</p>
+          <p className="text-sm text-slate-400">此帳號尚未綁定任何社，請聯絡地區管理員。</p>
         )}
       </div>
     </div>

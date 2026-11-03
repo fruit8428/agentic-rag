@@ -5,7 +5,6 @@ import { apiFetch, type MyClub } from './lib/api'
 import { AuthPage } from './components/AuthPage'
 import { ChatView } from './components/ChatView'
 import { IngestView } from './components/IngestView'
-import { JoinClubPage } from './components/JoinClubPage'
 import { ClubSettingsView } from './components/ClubSettingsView'
 import { AdminView } from './components/AdminView'
 import {
@@ -89,9 +88,17 @@ export default function App() {
 
   const isAdmin = me.role === 'admin'
 
-  // 尚未加入任何社（管理員例外）：只顯示加入社頁
+  // 帳號沒有綁定任何社（管理員例外）：模組 10 之後社帳號一定有社，這裡只是防呆
   if (!me.club_id && !isAdmin) {
-    return <JoinClubPage accessToken={session.access_token} email={me.email} onJoined={setMe} />
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="max-w-md p-5 rounded-2xl bg-slate-900 border border-amber-500/30 text-amber-200 text-sm space-y-3">
+          <div className="flex items-center gap-2 font-semibold"><AlertTriangle className="w-4 h-4" /> 此帳號尚未綁定任何社</div>
+          <p className="text-slate-300 leading-relaxed">請聯絡地區管理員處理後再登入。</p>
+          <button onClick={() => supabase.auth.signOut()} className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer">登出</button>
+        </div>
+      </div>
+    )
   }
 
   const tabs: { key: Tab; label: string; Icon: typeof MessageSquare; show: boolean }[] = [
@@ -134,7 +141,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-xs text-slate-400 hidden sm:inline">{me.email}</span>
+          <span className="text-xs text-slate-400 hidden sm:inline">{isAdmin ? '地區管理員' : '社共用帳號'}</span>
           <button
             onClick={() => supabase.auth.signOut()}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
@@ -156,7 +163,7 @@ export default function App() {
         />
       )}
       {activeTab === 'club' && <ClubSettingsView accessToken={session.access_token} me={me} />}
-      {activeTab === 'admin' && isAdmin && <AdminView accessToken={session.access_token} myUserId={me.user_id} />}
+      {activeTab === 'admin' && isAdmin && <AdminView accessToken={session.access_token} />}
     </div>
   )
 }

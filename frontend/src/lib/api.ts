@@ -12,6 +12,18 @@ export async function apiFetch<T>(
     headers['Content-Type'] = 'application/json'
   }
   const res = await fetch(path, { ...init, headers })
+  return parseResponse<T>(res)
+}
+
+// 不需登入的 API（登入／註冊／社名清單）
+export async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
+  if (init.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
+  const res = await fetch(path, { ...init, headers })
+  return parseResponse<T>(res)
+}
+
+async function parseResponse<T>(res: Response): Promise<T> {
   const text = await res.text()
   let data: any = null
   try {
@@ -39,5 +51,15 @@ export interface ClubPublic {
   name: string
   division: string | null
   code: string | null
-  joinable: boolean
+  activated: boolean
+}
+
+export interface SessionResponse {
+  access_token: string
+  refresh_token: string
+  expires_in: number | null
+  token_type: string
+  club_id: string | null
+  club_name: string | null
+  role: 'member' | 'admin'
 }

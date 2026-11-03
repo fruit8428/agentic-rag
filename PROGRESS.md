@@ -71,3 +71,10 @@
 - [x] 3. 後端權限與檢索過濾（`backend/app/services/visibility.py` 共用規則套用至混合檢索、Text-to-SQL、子代理與文件 API；`routers/clubs.py` 社內密碼加入／改密碼；`routers/admin.py` 管理員社與社友管理；bcrypt 密碼雜湊）
 - [x] 4. 前端加入社與管理介面（`JoinClubPage`、`ClubSettingsView`、`AdminView`、`IngestView` 上傳範圍選擇與 🌐/🔒 徽章、`ChatView` 來源徽章）
 - [x] 5. 端到端驗證（本機 45 項自動化測試全部通過：未加入社 403、跨社文件隔離、RLS 直連驗證、四條檢索路徑隔離、管理員刪社保護）
+
+### 模組 10：社共用登入（社名 + 社密碼）與啟用碼註冊
+- [x] 1. 規劃並建立模組 10 實施計劃（`.agent/plans/10.社共用登入.md`）
+- [x] 2. 資料庫遷移（`supabase/migrations/010_module10_club_login.sql`：`clubs.auth_user_id / activation_code / activated_at`、啟用碼產生函數、為全部社配發啟用碼、移除 `password_hash`）
+- [x] 3. 後端（`services/club_accounts.py` 每社一個 Supabase Auth 帳號＋登入節流；`routers/auth_router.py` 公開社名清單／登入／啟用碼註冊；`routers/clubs.py` 改密碼；`routers/admin.py` 啟用碼配發／重產、重設社密碼、刪社連同帳號）
+- [x] 4. 前端（`AuthPage` 依參考圖重做：社名登入／首次進入(註冊)、記住社名、忘記密碼聯絡管理員；`AdminView` 顯示啟用狀態與一鍵複製啟用碼；移除 `JoinClubPage`）
+- [ ] 5. 端到端驗證與部署（`backend/tests/e2e_module10.py`，先在本機、再對正式網址執行）

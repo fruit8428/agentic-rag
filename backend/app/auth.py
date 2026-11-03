@@ -121,7 +121,7 @@ async def require_club_member(
     if not user.club_id and not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="請先輸入社內密碼加入所屬社，才能使用知識庫功能",
+            detail="此帳號尚未綁定任何社，請聯絡地區管理員",
         )
     return user
 

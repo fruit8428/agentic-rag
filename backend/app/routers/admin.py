@@ -1,12 +1,11 @@
-"""模組 9：地區管理員 API — 社的新增／刪除／重設密碼、社友指派。"""
-from datetime import datetime, timezone
+"""模組 9／10：地區管理員 API — 社的新增／修改／刪除、啟用碼、重設社密碼。"""
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth import AuthenticatedUser, get_admin_supabase, require_admin
-from app.services.passwords import hash_password, validate_new_password
+from app.services import club_accounts as accounts
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -16,15 +15,15 @@ class AdminClubItem(BaseModel):
     name: str
     division: Optional[str] = None
     code: Optional[str] = None
-    has_password: bool
-    member_count: int
+    activated: bool
+    activation_code: Optional[str] = None   # 未啟用時才有值
+    activated_at: Optional[str] = None
     document_count: int
     created_at: Optional[str] = None
 
 
 class CreateClubRequest(BaseModel):
     name: str
-    password: str
     division: Optional[str] = None
     code: Optional[str] = None
 
@@ -39,59 +38,53 @@ class ResetClubPasswordRequest(BaseModel):
     new_password: str
 
 
-class AdminMemberItem(BaseModel):
-    user_id: str
-    email: str
-    role: str
-    club_id: Optional[str] = None
-    club_name: Optional[str] = None
-    joined_at: Optional[str] = None
-    created_at: Optional[str] = None
+_CLUB_COLUMNS = "id, name, division, code, auth_user_id, activation_code, activated_at, created_at"
 
 
-class UpdateMemberRequest(BaseModel):
-    club_id: Optional[str] = None   # 傳 null 代表移出社
-    role: Optional[str] = None      # 'member' | 'admin'
+def _to_item(c: dict, doc_counts: dict[str, int]) -> AdminClubItem:
+    activated = bool(c.get("auth_user_id"))
+    return AdminClubItem(
+        id=c["id"], name=c["name"], division=c.get("division"), code=c.get("code"),
+        activated=activated,
+        activation_code=None if activated else c.get("activation_code"),
+        activated_at=c.get("activated_at"),
+        document_count=doc_counts.get(c["id"], 0),
+        created_at=c.get("created_at"),
+    )
 
 
-def _count_by(rows: list[dict], key: str) -> dict[str, int]:
+def _doc_counts(admin) -> dict[str, int]:
+    docs = admin.table("documents").select("club_id").eq("scope", "club").execute().data or []
     counts: dict[str, int] = {}
-    for r in rows:
-        k = r.get(key)
-        if k:
-            counts[k] = counts.get(k, 0) + 1
+    for d in docs:
+        if d.get("club_id"):
+            counts[d["club_id"]] = counts.get(d["club_id"], 0) + 1
     return counts
+
+
+def _get_club(admin, club_id: str) -> dict:
+    rows = admin.table("clubs").select(_CLUB_COLUMNS).eq("id", club_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="找不到指定的社")
+    return rows[0]
 
 
 @router.get("/clubs", response_model=List[AdminClubItem])
 async def admin_list_clubs(user: AuthenticatedUser = Depends(require_admin)):
     admin = get_admin_supabase()
-    clubs = admin.table("clubs").select("id, name, division, code, password_hash, created_at").execute().data or []
-    members = admin.table("profiles").select("club_id").not_.is_("club_id", "null").execute().data or []
-    docs = admin.table("documents").select("club_id").eq("scope", "club").execute().data or []
-    m_counts, d_counts = _count_by(members, "club_id"), _count_by(docs, "club_id")
-    items = [
-        AdminClubItem(
-            id=c["id"], name=c["name"], division=c.get("division"), code=c.get("code"),
-            has_password=bool(c.get("password_hash")),
-            member_count=m_counts.get(c["id"], 0), document_count=d_counts.get(c["id"], 0),
-            created_at=c.get("created_at"),
-        )
-        for c in clubs
-    ]
+    clubs = admin.table("clubs").select(_CLUB_COLUMNS).execute().data or []
+    counts = _doc_counts(admin)
+    items = [_to_item(c, counts) for c in clubs]
     items.sort(key=lambda c: (c.division is None, c.code or "", c.name))
     return items
 
 
 @router.post("/clubs", response_model=AdminClubItem)
 async def admin_create_club(payload: CreateClubRequest, user: AuthenticatedUser = Depends(require_admin)):
+    """新增社並自動配發啟用碼（交給該社執秘做首次設定）。"""
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="社名不能為空")
-    try:
-        validate_new_password(payload.password)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     admin = get_admin_supabase()
     if admin.table("clubs").select("id").eq("name", name).execute().data:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"社名「{name}」已存在")
@@ -99,11 +92,9 @@ async def admin_create_club(payload: CreateClubRequest, user: AuthenticatedUser 
         "name": name,
         "division": (payload.division or "").strip() or None,
         "code": (payload.code or "").strip() or None,
-        "password_hash": hash_password(payload.password),
+        "activation_code": accounts.generate_activation_code(),
     }).execute()
-    c = ins.data[0]
-    return AdminClubItem(id=c["id"], name=c["name"], division=c.get("division"), code=c.get("code"),
-                         has_password=True, member_count=0, document_count=0, created_at=c.get("created_at"))
+    return _to_item(ins.data[0], {})
 
 
 @router.patch("/clubs/{club_id}", response_model=AdminClubItem)
@@ -123,83 +114,53 @@ async def admin_update_club(club_id: str, payload: UpdateClubRequest, user: Auth
     res = admin.table("clubs").update(updates).eq("id", club_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="找不到指定的社")
-    items = await admin_list_clubs(user)
-    return next(c for c in items if c.id == club_id)
+    return _to_item(_get_club(admin, club_id), _doc_counts(admin))
 
 
 @router.delete("/clubs/{club_id}")
 async def admin_delete_club(club_id: str, user: AuthenticatedUser = Depends(require_admin)):
-    """社內仍有社友或文件時拒絕刪除（防誤刪）。"""
+    """社內仍有文件時拒絕刪除（防誤刪）；刪社時一併刪除該社的共用帳號。"""
     admin = get_admin_supabase()
-    club = admin.table("clubs").select("id, name").eq("id", club_id).execute().data
-    if not club:
-        raise HTTPException(status_code=404, detail="找不到指定的社")
-    member_count = len(admin.table("profiles").select("user_id").eq("club_id", club_id).execute().data or [])
+    club = _get_club(admin, club_id)
     doc_count = len(admin.table("documents").select("id").eq("club_id", club_id).execute().data or [])
-    if member_count or doc_count:
+    if doc_count:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"無法刪除「{club[0]['name']}」：尚有 {member_count} 位社友與 {doc_count} 份文件。請先移出社友並刪除文件。",
+            detail=f"無法刪除「{club['name']}」：尚有 {doc_count} 份社內文件，請先刪除文件。",
         )
+    if club.get("auth_user_id"):
+        # 先解除綁定再刪帳號（帳號刪除會連動刪掉 profiles 列，之後社才刪得掉）
+        admin.table("clubs").update({"auth_user_id": None}).eq("id", club_id).execute()
+        accounts.delete_account(admin, club["auth_user_id"])
+    # 其他仍綁在此社的 profiles（例如管理員手動指派過的）一律解除
+    admin.table("profiles").update({"club_id": None, "joined_at": None}).eq("club_id", club_id).execute()
     admin.table("clubs").delete().eq("id", club_id).execute()
-    return {"status": "deleted", "id": club_id, "name": club[0]["name"]}
+    return {"status": "deleted", "id": club_id, "name": club["name"]}
+
+
+@router.post("/clubs/{club_id}/activation-code", response_model=AdminClubItem)
+async def admin_regenerate_activation_code(club_id: str, user: AuthenticatedUser = Depends(require_admin)):
+    """重新產生啟用碼（僅限尚未啟用的社）。"""
+    admin = get_admin_supabase()
+    club = _get_club(admin, club_id)
+    if club.get("auth_user_id"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="此社已啟用，請改用「重設密碼」")
+    admin.table("clubs").update({"activation_code": accounts.generate_activation_code()}).eq("id", club_id).execute()
+    return _to_item(_get_club(admin, club_id), _doc_counts(admin))
 
 
 @router.post("/clubs/{club_id}/reset-password")
 async def admin_reset_club_password(
     club_id: str, payload: ResetClubPasswordRequest, user: AuthenticatedUser = Depends(require_admin)
 ):
+    """管理員直接為已啟用的社設定新密碼（社友忘記密碼時使用）。"""
     try:
-        validate_new_password(payload.new_password)
+        accounts.validate_new_password(payload.new_password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     admin = get_admin_supabase()
-    res = admin.table("clubs").update({"password_hash": hash_password(payload.new_password)}).eq("id", club_id).execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="找不到指定的社")
-    return {"status": "ok", "id": club_id, "name": res.data[0]["name"], "message": "社內密碼已重設"}
-
-
-@router.get("/members", response_model=List[AdminMemberItem])
-async def admin_list_members(user: AuthenticatedUser = Depends(require_admin)):
-    admin = get_admin_supabase()
-    profiles = admin.table("profiles").select("user_id, club_id, role, joined_at, created_at, clubs(name)").execute().data or []
-    prof_by_id = {p["user_id"]: p for p in profiles}
-    auth_users = admin.auth.admin.list_users()
-    items: list[AdminMemberItem] = []
-    for u in auth_users:
-        p = prof_by_id.get(u.id, {})
-        rel = p.get("clubs") or {}
-        items.append(AdminMemberItem(
-            user_id=u.id, email=u.email or "", role=p.get("role") or "member",
-            club_id=p.get("club_id"), club_name=rel.get("name") if isinstance(rel, dict) else None,
-            joined_at=p.get("joined_at"), created_at=str(u.created_at) if u.created_at else None,
-        ))
-    items.sort(key=lambda m: (m.club_name or "～", m.email))
-    return items
-
-
-@router.patch("/members/{user_id}", response_model=AdminMemberItem)
-async def admin_update_member(user_id: str, payload: UpdateMemberRequest, user: AuthenticatedUser = Depends(require_admin)):
-    """重新指派社友的社別（club_id 傳 null 代表移出），或變更角色。"""
-    admin = get_admin_supabase()
-    updates: dict = {}
-    if "club_id" in payload.model_fields_set:
-        if payload.club_id:
-            if not admin.table("clubs").select("id").eq("id", payload.club_id).execute().data:
-                raise HTTPException(status_code=404, detail="找不到指定的社")
-        updates["club_id"] = payload.club_id
-        updates["joined_at"] = None if payload.club_id is None else datetime.now(timezone.utc).isoformat()
-    if payload.role is not None:
-        if payload.role not in ("member", "admin"):
-            raise HTTPException(status_code=400, detail="角色只能是 member 或 admin")
-        if user_id == user.id and payload.role != "admin":
-            raise HTTPException(status_code=400, detail="不能取消自己的管理員角色")
-        updates["role"] = payload.role
-    if not updates:
-        raise HTTPException(status_code=400, detail="沒有要更新的欄位")
-    res = admin.table("profiles").update(updates).eq("user_id", user_id).execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="找不到指定的使用者")
-    items = await admin_list_members(user)
-    return next(m for m in items if m.user_id == user_id)
+    club = _get_club(admin, club_id)
+    if not club.get("auth_user_id"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="此社尚未啟用，請把啟用碼交給該社做首次設定")
+    accounts.set_account_password(admin, club["auth_user_id"], payload.new_password)
+    return {"status": "ok", "id": club_id, "name": club["name"], "message": "社密碼已重設"}

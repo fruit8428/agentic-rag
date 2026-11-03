@@ -63,6 +63,8 @@ class Settings(BaseSettings):
 
     # 模組 9：地區管理員帳號（首次登入時自動取得 admin 角色）
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "").strip() or "fruit8428@gmail.com"
+    # 模組 10：登入頁「忘記密碼？聯絡管理員」顯示的聯絡方式（預設同管理員 Email）
+    ADMIN_CONTACT: str = os.getenv("ADMIN_CONTACT", "").strip() or os.getenv("ADMIN_EMAIL", "").strip() or "fruit8428@gmail.com"
 
 
 settings = Settings()

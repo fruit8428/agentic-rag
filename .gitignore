@@ -26,3 +26,5 @@ frontend/dist/
 
 # macOS 系統檔
 .DS_Store
+.vercel
+.env*

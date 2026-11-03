@@ -20,13 +20,20 @@ def _require(name: str) -> str:
     return value
 
 
-def _require_jwt(name: str) -> str:
-    """Supabase 金鑰是 JWT 格式（三段、以兩個句點分隔），用來及早發現複製貼上被截斷的情況。"""
+def _require_supabase_key(name: str) -> str:
+    """
+    檢查 Supabase 金鑰格式，及早發現複製貼上被截斷的情況。
+    支援兩種格式：
+    - 新版金鑰：sb_publishable_...（取代 anon）、sb_secret_...（取代 service_role）
+    - 舊版金鑰：JWT 格式（三段、以兩個句點分隔、超過 100 字）
+    """
     value = _require(name)
-    if value.count(".") != 2 or len(value) < 100:
+    is_new_style = value.startswith(("sb_publishable_", "sb_secret_")) and len(value) > 30
+    is_legacy_jwt = value.count(".") == 2 and len(value) > 100
+    if not (is_new_style or is_legacy_jwt):
         raise RuntimeError(
             f"環境變數 {name} 格式不正確（看起來被截斷了）。"
-            f"請重新從 Supabase Dashboard → Settings → API 完整複製整串金鑰。"
+            f"請重新從 Supabase Dashboard → Project Settings → API Keys 完整複製整串金鑰。"
         )
     return value
 
@@ -34,8 +41,8 @@ def _require_jwt(name: str) -> str:
 class Settings(BaseSettings):
     # Supabase
     SUPABASE_URL: str = _require("SUPABASE_URL")
-    SUPABASE_ANON_KEY: str = _require_jwt("SUPABASE_ANON_KEY")
-    SUPABASE_SERVICE_ROLE_KEY: str = _require_jwt("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_ANON_KEY: str = _require_supabase_key("SUPABASE_ANON_KEY")
+    SUPABASE_SERVICE_ROLE_KEY: str = _require_supabase_key("SUPABASE_SERVICE_ROLE_KEY")
 
     # Google AI Studio / Gemini (OpenAI 兼容端點)
     GEMINI_API_KEY: str = _require("GEMINI_API_KEY")

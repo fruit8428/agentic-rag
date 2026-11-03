@@ -6,9 +6,11 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim()
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
 
+// 支援新版 sb_publishable_ 金鑰與舊版 JWT 格式的 anon key
+const looksLikeNewKey = supabaseAnonKey.startsWith('sb_publishable_') && supabaseAnonKey.length > 30
 const looksLikeJwt = supabaseAnonKey.split('.').length === 3 && supabaseAnonKey.length > 100
 
-if (!supabaseUrl.startsWith('https://') || !looksLikeJwt) {
+if (!supabaseUrl.startsWith('https://') || !(looksLikeNewKey || looksLikeJwt)) {
   // 在畫面上顯示清楚的錯誤，而不是讓使用者看到一片空白或「Invalid API key」
   document.body.innerHTML =
     '<div style="font-family:sans-serif;padding:2rem;max-width:40rem;margin:auto;line-height:1.6">' +

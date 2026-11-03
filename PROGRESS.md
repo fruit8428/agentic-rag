@@ -77,4 +77,4 @@
 - [x] 2. 資料庫遷移（`supabase/migrations/010_module10_club_login.sql`：`clubs.auth_user_id / activation_code / activated_at`、啟用碼產生函數、為全部社配發啟用碼、移除 `password_hash`）
 - [x] 3. 後端（`services/club_accounts.py` 每社一個 Supabase Auth 帳號＋登入節流；`routers/auth_router.py` 公開社名清單／登入／啟用碼註冊；`routers/clubs.py` 改密碼；`routers/admin.py` 啟用碼配發／重產、重設社密碼、刪社連同帳號）
 - [x] 4. 前端（`AuthPage` 依參考圖重做：社名登入／首次進入(註冊)、記住社名、忘記密碼聯絡管理員；`AdminView` 顯示啟用狀態與一鍵複製啟用碼；移除 `JoinClubPage`）
-- [ ] 5. 端到端驗證與部署（`backend/tests/e2e_module10.py`，先在本機、再對正式網址執行）
+- [x] 5. 端到端驗證與部署（`backend/tests/e2e_module10.py`：本機 60 項、正式網址 59 項全部通過；已部署至 https://agentic-rag-dusky.vercel.app ）

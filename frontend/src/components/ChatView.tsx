@@ -1,6 +1,41 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+
+// AI 在 Markdown 表格格子內常用 <br> 換行（表格格子不能直接換行）。
+// react-markdown 為了安全預設不渲染 HTML，會把 <br> 當純文字顯示。
+// 這裡只把 <br> 轉成真正的換行元素，其他 HTML 標籤維持不渲染，安全性不變。
+const BR_PATTERN = /<br\s*\/?>/gi
+
+function renderWithLineBreaks(children: React.ReactNode): React.ReactNode {
+  return React.Children.map(children, (child) => {
+    if (typeof child !== 'string' || !BR_PATTERN.test(child)) return child
+    BR_PATTERN.lastIndex = 0
+    const parts = child.split(BR_PATTERN)
+    return parts.map((part, i) => (
+      <React.Fragment key={i}>
+        {part}
+        {i < parts.length - 1 && <br />}
+      </React.Fragment>
+    ))
+  })
+}
+
+// 覆寫這些元素的渲染，讓其中的 <br> 文字變成真正的換行
+const markdownComponents = {
+  td: ({ children, ...props }: React.ComponentPropsWithoutRef<'td'>) => (
+    <td {...props}>{renderWithLineBreaks(children)}</td>
+  ),
+  th: ({ children, ...props }: React.ComponentPropsWithoutRef<'th'>) => (
+    <th {...props}>{renderWithLineBreaks(children)}</th>
+  ),
+  p: ({ children, ...props }: React.ComponentPropsWithoutRef<'p'>) => (
+    <p {...props}>{renderWithLineBreaks(children)}</p>
+  ),
+  li: ({ children, ...props }: React.ComponentPropsWithoutRef<'li'>) => (
+    <li {...props}>{renderWithLineBreaks(children)}</li>
+  ),
+}
 import {
   MessageSquarePlus,
   Trash2,
@@ -736,7 +771,7 @@ export function ChatView({ accessToken }: ChatViewProps) {
                         <div className="whitespace-pre-wrap">{msg.content}</div>
                       ) : msg.content ? (
                         <div className="prose prose-invert prose-sm max-w-none space-y-2 overflow-x-auto">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                             {msg.content}
                           </ReactMarkdown>
                         </div>

@@ -36,11 +36,12 @@ update public.clubs
 set activation_code = public.generate_activation_code()
 where auth_user_id is null and activation_code is null;
 
--- 4. 舊的社內密碼欄位不再使用（密碼改由 Supabase Auth 管理）
+-- 4. 重建 clubs_public 視圖（joinable → activated；視圖依賴 password_hash，必須先 drop 再刪欄位）
+drop view if exists public.clubs_public;
+
+-- 5. 舊的社內密碼欄位不再使用（密碼改由 Supabase Auth 管理）
 alter table public.clubs drop column if exists password_hash;
 
--- 5. 重建 clubs_public 視圖（joinable → activated；視圖欄位改名必須先 drop）
-drop view if exists public.clubs_public;
 create view public.clubs_public as
     select id, name, division, code, (auth_user_id is not null) as activated
     from public.clubs;

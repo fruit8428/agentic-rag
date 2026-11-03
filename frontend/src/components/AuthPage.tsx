@@ -266,7 +266,7 @@ export function AuthPage() {
                   mode === 'login'
                     ? isAdminSelected
                       ? '請輸入管理員密碼'
-                      : '請輸入您設定的密碼(管理員請輸入管理員密碼)'
+                      : '請輸入社密碼(管理員請輸入管理員密碼)'
                     : '全社共用這組密碼，請妥善保管'
                 }
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}

@@ -28,3 +28,6 @@ frontend/dist/
 .DS_Store
 .vercel
 .env*
+
+# Supabase CLI 暫存
+supabase/.temp/

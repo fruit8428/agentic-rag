@@ -4,7 +4,7 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.par
 from app.config import settings
 from supabase import create_client
 
-API = "http://127.0.0.1:8000"
+API = __import__("os").environ.get("E2E_API", "http://127.0.0.1:8000")
 admin_db = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 tag = secrets.token_hex(3)
 PW = "Test-" + secrets.token_urlsafe(12)

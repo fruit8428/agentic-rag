@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from app.auth import AuthenticatedUser, get_current_user
+from app.auth import AuthenticatedUser, require_club_member
 
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
@@ -29,7 +29,7 @@ class MessageItem(BaseModel):
 
 
 @router.get("", response_model=List[ThreadItem])
-async def list_threads(user: AuthenticatedUser = Depends(get_current_user)):
+async def list_threads(user: AuthenticatedUser = Depends(require_club_member)):
     """取得當前用戶的所有對話線程（依更新時間倒序排列）。"""
     try:
         res = (
@@ -54,7 +54,7 @@ async def list_threads(user: AuthenticatedUser = Depends(get_current_user)):
 
 @router.post("", response_model=ThreadItem)
 async def create_thread(
-    payload: ThreadCreate, user: AuthenticatedUser = Depends(get_current_user)
+    payload: ThreadCreate, user: AuthenticatedUser = Depends(require_club_member)
 ):
     """建立新的對話線程。"""
     try:
@@ -77,7 +77,7 @@ async def create_thread(
 
 @router.delete("/{thread_id}")
 async def delete_thread(
-    thread_id: str, user: AuthenticatedUser = Depends(get_current_user)
+    thread_id: str, user: AuthenticatedUser = Depends(require_club_member)
 ):
     """刪除指定的對話線程（會自動連帶刪除其中的 messages）。"""
     try:
@@ -92,7 +92,7 @@ async def delete_thread(
 
 @router.get("/{thread_id}/messages", response_model=List[MessageItem])
 async def list_messages(
-    thread_id: str, user: AuthenticatedUser = Depends(get_current_user)
+    thread_id: str, user: AuthenticatedUser = Depends(require_club_member)
 ):
     """取得指定對話線程內的所有歷史訊息。"""
     try:

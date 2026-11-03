@@ -63,6 +63,10 @@ interface DocumentItem {
   sync_summary?: SyncSummary | null
   extracted_metadata?: ExtractedMetadata | null
   parse_info?: ParseInfo | null
+  // 模組 9：文件範圍（district=地區公開 / club=社內）
+  scope?: 'district' | 'club'
+  club_id?: string | null
+  club_name?: string | null
   created_at: string
   updated_at: string
 }
@@ -70,10 +74,15 @@ interface DocumentItem {
 interface IngestViewProps {
   accessToken: string
   userId: string
+  clubName: string | null
+  isAdmin: boolean
 }
 
-export function IngestView({ accessToken, userId }: IngestViewProps) {
+export function IngestView({ accessToken, userId, clubName, isAdmin }: IngestViewProps) {
   const [documents, setDocuments] = useState<DocumentItem[]>([])
+  // 模組 9：上傳範圍。一般社友只能上傳社內；管理員可選地區公開（沒有所屬社時預設地區）
+  const [uploadScope, setUploadScope] = useState<'club' | 'district'>(isAdmin && !clubName ? 'district' : 'club')
+  const [showLab, setShowLab] = useState(false)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [extractingDocId, setExtractingDocId] = useState<string | null>(null)
@@ -148,6 +157,7 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
   const uploadSingleFileObject = async (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('scope', uploadScope)
 
     const res = await fetch('/api/documents/upload', {
       method: 'POST',
@@ -350,14 +360,14 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-2xl font-bold text-white tracking-tight">
-                多格式知識庫導入 · 記錄管理器 & AI 元數據
+                知識庫文件導入
               </h1>
               <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-medium">
-                Module 3 · 4 · 5
+                {isAdmin ? '地區管理員' : clubName || '社內'}
               </span>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              支援 <strong>PDF、Word (.docx)、HTML、CSV、Markdown、TXT</strong> 統一轉 Markdown 結構化解析，內建 <strong>SHA-256 去重增量同步</strong>、<strong>AI 元數據提取</strong>與<strong>零殘留級聯刪除</strong>！
+              支援 <strong>PDF、Word (.docx)、HTML、CSV、Markdown、TXT</strong>。<strong>🔒 社內文件</strong>只有貴社社友看得到；<strong>🌐 地區公開文件</strong>全 3523 地區社友都能查閱（僅管理員可上傳）。
             </p>
           </div>
           <button
@@ -453,7 +463,14 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
           </div>
         )}
 
-        {/* 模組 5 互動實驗室：一鍵實測多格式文件（Word / HTML / CSV）結構化表格解析 */}
+        {/* 模組 5 互動實驗室（課程示範功能，預設收合） */}
+        <button
+          onClick={() => setShowLab((v) => !v)}
+          className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer"
+        >
+          {showLab ? '▾ 隱藏' : '▸ 顯示'} 多格式解析測試工具（產生測試用 Word / HTML / CSV 檔）
+        </button>
+        {showLab && (
         <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300">
@@ -493,6 +510,37 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
               <span>📊 導入測試名冊 (.csv 結構化表)</span>
             </button>
           </div>
+        </div>
+        )}
+
+        {/* 模組 9：上傳範圍選擇 */}
+        <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold text-slate-300">上傳文件的範圍：</span>
+          <div className="inline-flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            {clubName && (
+              <button
+                onClick={() => setUploadScope('club')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                  uploadScope === 'club' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🔒 社內（{clubName}）
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => setUploadScope('district')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                  uploadScope === 'district' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🌐 地區公開
+              </button>
+            )}
+          </div>
+          <span className="text-[11px] text-slate-500">
+            {uploadScope === 'district' ? '全 3523 地區社友都能查閱' : '只有貴社社友能查閱'}
+          </span>
         </div>
 
         {/* 拖放上傳區 */}
@@ -581,6 +629,15 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
                             <p className="text-sm font-medium text-white truncate">
                               {doc.filename}
                             </p>
+                            {doc.scope === 'district' ? (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold">
+                                🌐 地區公開
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-semibold">
+                                🔒 {doc.club_name || '社內'} 社內
+                              </span>
+                            )}
                             {pInfo?.format_type && (
                               <span className="px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-semibold">
                                 {pInfo.format_type}
@@ -694,7 +751,7 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
                           </span>
                         )}
 
-                        {doc.user_id === userId ? (
+                        {doc.user_id === userId || isAdmin ? (
                           <button
                             onClick={() => handleDelete(doc.id)}
                             title="執行級聯刪除（同步清除 Storage 原檔與所有 pgvector 向量分塊）"
@@ -705,11 +762,11 @@ export function IngestView({ accessToken, userId }: IngestViewProps) {
                           </button>
                         ) : (
                           <span
-                            title="此為全體共享知識庫文件，僅上傳者本人可刪除"
+                            title="僅上傳者本人或地區管理員可刪除此文件"
                             className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-300 text-xs font-medium flex items-center gap-1.5"
                           >
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>共享知識庫</span>
+                            <span>{doc.scope === 'district' ? '地區文件' : '社內文件'}</span>
                           </span>
                         )}
                       </div>

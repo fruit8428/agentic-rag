@@ -2,9 +2,10 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from app.auth import AuthenticatedUser, get_admin_supabase, get_current_user
+from app.auth import AuthenticatedUser, get_admin_supabase, require_club_member
+from app.services.visibility import fetch_visible_document, flatten_club_name, visible_documents_query
 from app.services.document_parser import SUPPORTED_EXTENSIONS
 from app.services.ingestion import process_document_background
 from app.services.metadata_extractor import extract_and_save_document_metadata
@@ -27,6 +28,10 @@ class DocumentItem(BaseModel):
     sync_summary: Optional[Dict[str, Any]] = None
     extracted_metadata: Optional[Dict[str, Any]] = None
     parse_info: Optional[Dict[str, Any]] = None
+    # 模組 9：文件範圍（district=地區公開 / club=社內）與所屬社
+    scope: str = "club"
+    club_id: Optional[str] = None
+    club_name: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -127,17 +132,16 @@ def enrich_documents_with_sync_info(user_supabase, docs: list[dict]) -> list[dic
 
 
 @router.get("", response_model=List[DocumentItem])
-async def list_documents(user: AuthenticatedUser = Depends(get_current_user)):
-    """取得共享知識庫中所有已上傳的文件列表（含模組 3~5 完整狀態與元數據，全體登入用戶皆可查閱）。"""
+async def list_documents(user: AuthenticatedUser = Depends(require_club_member)):
+    """取得此使用者可見的文件列表：地區公開文件 + 本社社內文件（管理員可見全部）。"""
     try:
         admin_supabase = get_admin_supabase()
         res = (
-            admin_supabase.table("documents")
-            .select("*")
+            visible_documents_query(admin_supabase, user, select="*, clubs(name)")
             .order("updated_at", desc=True)
             .execute()
         )
-        docs = res.data or []
+        docs = [flatten_club_name(d) for d in (res.data or [])]
         return enrich_documents_with_sync_info(admin_supabase, docs)
     except Exception as e:
         err_str = str(e)
@@ -152,11 +156,33 @@ async def list_documents(user: AuthenticatedUser = Depends(get_current_user)):
         )
 
 
+def resolve_upload_scope(user: AuthenticatedUser, scope: Optional[str]) -> tuple[str, Optional[str]]:
+    """
+    模組 9：決定上傳文件的範圍。
+    - 一般社友：只能上傳「本社社內」文件。
+    - 管理員：可選「地區公開」；未指定時，有所屬社則預設社內，否則預設地區公開。
+    回傳 (scope, club_id)。
+    """
+    requested = (scope or "").strip().lower() or None
+    if requested not in (None, "club", "district"):
+        raise HTTPException(status_code=400, detail="文件範圍只能是 club（社內）或 district（地區公開）")
+    if requested is None:
+        requested = "club" if user.club_id else "district"
+    if requested == "district":
+        if not user.is_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有地區管理員可以上傳地區公開文件")
+        return "district", None
+    if not user.club_id:
+        raise HTTPException(status_code=400, detail="您尚未加入任何社，無法上傳社內文件")
+    return "club", user.club_id
+
+
 @router.post("/upload", response_model=DocumentItem)
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    user: AuthenticatedUser = Depends(get_current_user),
+    scope: Optional[str] = Form(None),
+    user: AuthenticatedUser = Depends(require_club_member),
 ):
     """
     手動上傳多格式文件 (PDF / DOCX / HTML / CSV / MD / TXT) + 模組 3 記錄管理器：
@@ -180,16 +206,17 @@ async def upload_document(
     file_hash = compute_sha256_bytes(content_bytes)
     mime_type = file.content_type or "application/octet-stream"
     admin_supabase = get_admin_supabase()
+    target_scope, target_club_id = resolve_upload_scope(user, scope)
 
     try:
-        # 檢查共享知識庫是否已有同名文件或相同 SHA-256 指紋的文件
-        existing_docs_res = (
-            admin_supabase.table("documents")
-            .select("*")
-            .order("updated_at", desc=True)
-            .execute()
+        # 模組 9：去重與改版比對只在「同一範圍」內進行（同名文件在不同社可各自存在）
+        existing_q = admin_supabase.table("documents").select("*, clubs(name)").eq("scope", target_scope)
+        if target_scope == "club":
+            existing_q = existing_q.eq("club_id", target_club_id)
+        existing_docs_res = existing_q.order("updated_at", desc=True).execute()
+        existing_docs = enrich_documents_with_sync_info(
+            admin_supabase, [flatten_club_name(d) for d in (existing_docs_res.data or [])]
         )
-        existing_docs = enrich_documents_with_sync_info(admin_supabase, existing_docs_res.data or [])
 
         # 情況 A：檢查是否與任何已完成的現有文件擁有完全相同的 SHA-256 檔案雜湊
         for ex_doc in existing_docs:
@@ -225,7 +252,7 @@ async def upload_document(
                     admin_supabase.table("document_chunks").update({"metadata": meta0}).eq("id", c0_res.data[0]["id"]).execute()
 
                 upd_res = (
-                    user.supabase.table("documents")
+                    admin_supabase.table("documents")
                     .update({"updated_at": now_iso})
                     .eq("id", ex_doc["id"])
                     .execute()
@@ -293,7 +320,7 @@ async def upload_document(
         now_iso = datetime.now(timezone.utc).isoformat()
         if is_new_document:
             res = (
-                user.supabase.table("documents")
+                admin_supabase.table("documents")
                 .insert(
                     {
                         "id": doc_id,
@@ -304,13 +331,15 @@ async def upload_document(
                         "storage_path": storage_path,
                         "status": "processing",
                         "chunk_count": 0,
+                        "scope": target_scope,
+                        "club_id": target_club_id,
                     }
                 )
                 .execute()
             )
         else:
             res = (
-                user.supabase.table("documents")
+                admin_supabase.table("documents")
                 .update(
                     {
                         "filename": filename,
@@ -329,6 +358,7 @@ async def upload_document(
             raise HTTPException(status_code=500, detail="無法寫入 documents 資料表")
 
         doc_record = res.data[0]
+        doc_record["club_name"] = user.club_name if target_scope == "club" else None
         doc_record["content_hash"] = file_hash
         doc_record["sync_summary"] = None
         doc_record["extracted_metadata"] = None
@@ -365,20 +395,11 @@ async def upload_document(
 @router.post("/{document_id}/extract-metadata", response_model=DocumentItem)
 async def extract_document_metadata_endpoint(
     document_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(require_club_member),
 ):
     """模組 4：針對指定文件立即執行 AI 結構化元數據提取（標題、類別、年份、摘要、關鍵字標籤）。"""
     admin_supabase = get_admin_supabase()
-    doc_res = (
-        admin_supabase.table("documents")
-        .select("*")
-        .eq("id", document_id)
-        .execute()
-    )
-    if not doc_res.data:
-        raise HTTPException(status_code=404, detail="找不到指定的文件")
-
-    doc = doc_res.data[0]
+    doc = flatten_club_name(fetch_visible_document(admin_supabase, user, document_id, select="*, clubs(name)"))
     await extract_and_save_document_metadata(
         admin_supabase=admin_supabase,
         doc_id=document_id,
@@ -391,7 +412,7 @@ async def extract_document_metadata_endpoint(
 @router.post("/demo/docx", response_model=DocumentItem)
 async def upload_demo_docx(
     background_tasks: BackgroundTasks,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(require_club_member),
 ):
     """模組 5 互動實驗室：動態建立一份包含標題與真實 Word 表格 (<w:tbl>) 的 .docx 檔案並執行導入。"""
     import io
@@ -434,6 +455,7 @@ async def upload_demo_docx(
     return await upload_document(
         background_tasks=background_tasks,
         file=fake_upload,
+        scope=None,
         user=user,
     )
 
@@ -441,11 +463,11 @@ async def upload_demo_docx(
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(require_club_member),
 ):
     """
     模組 5：完整級聯刪除（Cascade Deletion）與零孤兒向量驗證：
-    1. 僅允許文件上傳者本人刪除（防止其他共享使用者誤刪主知識庫文件）
+    1. 僅允許文件上傳者本人或地區管理員刪除（防止其他社友誤刪知識庫文件）
     2. 統計將被級聯清除的 document_chunks 向量分塊數
     3. 刪除 Supabase Storage 雲端儲存桶中的原始檔案
     4. 刪除 documents 主表紀錄（自動觸發 PostgreSQL ON DELETE CASCADE 清除所有 document_chunks）
@@ -465,10 +487,11 @@ async def delete_document(
 
         if doc_res.data:
             doc_obj = doc_res.data[0]
-            if doc_obj.get("user_id") != user.id:
+            fetch_visible_document(admin_supabase, user, document_id, select="id, scope, club_id")
+            if doc_obj.get("user_id") != user.id and not user.is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="權限不足：僅文件上傳者本人可刪除此共享知識庫文件",
+                    detail="權限不足：僅文件上傳者本人或地區管理員可刪除此文件",
                 )
             filename = doc_obj.get("filename", filename)
             deleted_chunks_count = doc_obj.get("chunk_count", 0)
@@ -495,7 +518,7 @@ async def delete_document(
 
         # 執行刪除（觸發 ON DELETE CASCADE，並附加顯式清理雙重保障）
         admin_supabase.table("document_chunks").delete().eq("document_id", document_id).execute()
-        user.supabase.table("documents").delete().eq("id", document_id).execute()
+        admin_supabase.table("documents").delete().eq("id", document_id).execute()
 
         # 驗證是否 0 殘留
         remaining_res = (

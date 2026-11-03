@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY", "")
     LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "agentic-rag")
 
+    # 模組 9：地區管理員帳號（首次登入時自動取得 admin 角色）
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "").strip() or "fruit8428@gmail.com"
+
 
 settings = Settings()
 

@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import auth_router, threads, chat, documents
+from app.routers import admin, auth_router, chat, clubs, documents, threads
 
 app = FastAPI(
     title="Agentic RAG Masterclass API",
     description="FastAPI + Supabase + Google Gemini + LangSmith",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -21,6 +21,8 @@ app.include_router(auth_router.router)
 app.include_router(threads.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
+app.include_router(clubs.router)
+app.include_router(admin.router)
 
 
 @app.get("/api/health")

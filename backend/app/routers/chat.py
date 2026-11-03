@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langsmith import traceable
-from app.auth import AuthenticatedUser, get_current_user
+from app.auth import AuthenticatedUser, get_admin_supabase, require_club_member
+from app.services.visibility import fetch_visible_document
 from app.config import settings
 from app.llm import llm_client
 from app.services.ingestion import embed_query
@@ -614,7 +615,7 @@ async def run_agentic_rag_turn(
 @router.post("/stream")
 async def chat_stream(
     payload: ChatRequest,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: AuthenticatedUser = Depends(require_club_member),
 ):
     """
     接收使用者訊息 -> 存入 Supabase -> 讀取該線程歷史對話 ->
@@ -623,6 +624,10 @@ async def chat_stream(
     user_text = payload.message.strip()
     if not user_text:
         raise HTTPException(status_code=400, detail="訊息內容不能為空")
+
+    # 模組 9：若指定單一文件過濾，必須是此使用者看得到的文件（地區級或本社）
+    if payload.document_id:
+        fetch_visible_document(get_admin_supabase(), user, payload.document_id, select="id, scope, club_id")
 
     thread_res = (
         user.supabase.table("threads")

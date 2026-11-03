@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from langsmith import traceable
 from pydantic import BaseModel, Field
 from app.auth import AuthenticatedUser, get_admin_supabase
+from app.services.visibility import visible_documents_query
 from app.config import settings
 from app.llm import llm_client
 from app.services.ingestion import embed_query
@@ -421,19 +422,22 @@ async def execute_hybrid_rerank_search(
     """
     doc_map: Dict[str, str] = {}
     doc_meta_map: Dict[str, dict] = {}
+    doc_scope_map: Dict[str, str] = {}
     allowed_doc_ids: Optional[set[str]] = None
 
     try:
         admin_supabase = get_admin_supabase()
+        # 模組 9：只讀取此使用者可見的文件（地區級 + 本社；管理員全部）
         docs_res = (
-            admin_supabase.table("documents")
-            .select("id, filename, updated_at")
-            .eq("status", "completed")
+            visible_documents_query(
+                admin_supabase, user, select="id, filename, updated_at, scope, club_id", status_filter="completed"
+            )
             .order("updated_at", desc=True)
             .execute()
         )
         docs = docs_res.data or []
         doc_map = {d["id"]: d["filename"] for d in docs}
+        doc_scope_map = {d["id"]: d.get("scope") or "club" for d in docs}
         doc_ids = [d["id"] for d in docs]
         if doc_ids:
             c0_res = (
@@ -448,7 +452,8 @@ async def execute_hybrid_rerank_search(
                 doc_meta_map[r["document_id"]] = m.get("extracted_metadata") or {}
 
         if document_id_filter:
-            allowed_doc_ids = {document_id_filter}
+            # 指定文件必須在可見清單內，否則視為沒有任何可檢索文件
+            allowed_doc_ids = {document_id_filter} if document_id_filter in doc_map else set()
         elif category_filter:
             matched_ids = {
                 did
@@ -459,6 +464,12 @@ async def execute_hybrid_rerank_search(
                 allowed_doc_ids = matched_ids
     except Exception:
         pass
+
+    # 模組 9：雙軌檢索的文件白名單永遠限制在可見範圍內（不可為 None，否則管理員連線會撈到全部）
+    if allowed_doc_ids is None:
+        allowed_doc_ids = set(doc_map.keys())
+    if not allowed_doc_ids:
+        return []
 
     # 1. 執行雙軌檢索
     kw_hits = lexical_keyword_search(
@@ -483,4 +494,6 @@ async def execute_hybrid_rerank_search(
 
     # 3. 執行 AI 重排序與零遺漏保護
     final_results = await rerank_candidates(query, fused_candidates, top_k=top_k)
+    for r in final_results:
+        r["scope"] = doc_scope_map.get(r.get("document_id"), "club")
     return final_results

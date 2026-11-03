@@ -10,6 +10,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.auth import AuthenticatedUser, get_admin_supabase
+from app.services.visibility import visible_documents_query
 from app.config import settings
 from app.llm import llm_client
 
@@ -149,13 +150,10 @@ async def execute_structured_sql_tool(
     plan = await generate_sql_plan(natural_query)
     admin_supabase = get_admin_supabase()
 
-    # 1. 讀取共享知識庫的所有已完成文件
-    docs_q = (
-        admin_supabase.table("documents")
-        .select("id, filename, status, created_at, updated_at")
-        .eq("status", "completed")
-        .order("updated_at", desc=True)
-    )
+    # 1. 讀取此使用者可見的所有已完成文件（模組 9：地區級 + 本社）
+    docs_q = visible_documents_query(
+        admin_supabase, user, select="id, filename, status, scope, club_id, created_at, updated_at", status_filter="completed"
+    ).order("updated_at", desc=True)
     if document_id_filter:
         docs_q = docs_q.eq("id", document_id_filter)
     docs_res = docs_q.execute()

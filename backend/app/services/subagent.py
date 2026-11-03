@@ -4,6 +4,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.auth import AuthenticatedUser, get_admin_supabase
+from app.services.visibility import visible_documents_query
 from app.config import settings
 from app.llm import llm_client
 from app.services.additional_tools import normalize_entity_keyword
@@ -84,12 +85,10 @@ async def execute_isolated_subagent(
     # =========================================================================
     # 嵌套工具 1：subtool_inspect_document_scope（鎖定目標文件與元數據範圍）
     # =========================================================================
-    docs_q = (
-        admin_supabase.table("documents")
-        .select("id, filename, status, created_at, updated_at")
-        .eq("status", "completed")
-        .order("updated_at", desc=True)
-    )
+    # 模組 9：只鎖定此使用者可見的文件（地區級 + 本社）
+    docs_q = visible_documents_query(
+        admin_supabase, user, select="id, filename, status, scope, club_id, created_at, updated_at", status_filter="completed"
+    ).order("updated_at", desc=True)
     if document_id_filter:
         docs_q = docs_q.eq("id", document_id_filter)
     docs_res = docs_q.execute()

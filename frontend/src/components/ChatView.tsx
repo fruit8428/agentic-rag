@@ -84,6 +84,7 @@ interface SubAgentTrace {
 
 interface SourceChunk {
   filename: string
+  scope?: 'district' | 'club'
   category?: string
   event_or_year?: string
   chunk_index: number
@@ -517,7 +518,7 @@ export function ChatView({ accessToken }: ChatViewProps) {
                 {[
                   '請問松青社有誰得獎？',
                   '幫我用 SQL 統計目前知識庫共有幾份文件、幾個分塊，以及松青社與民生社的得獎筆數？',
-                  '請上網搜尋國際扶輪 3481 地區的官方網站與最新活動資訊？',
+                  '請上網搜尋國際扶輪 3523 地區的官方網站與最新活動資訊？',
                   '請派子代理對整份年會頒獎名單進行全文件深度分析，整理第三全會與第四全會的所有獎項梯次、集合時間，並分析第四分區（04-1～04-7）各社的得獎分布！',
                 ].map((sample) => (
                   <button
@@ -615,6 +616,17 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                               ? `${src.filename}`
                                               : `📄 ${src.filename} (段落 #${src.chunk_index + 1})`}
                                           </span>
+                                          {src.scope && matchType !== 'web' && (
+                                            <span
+                                              className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                                src.scope === 'district'
+                                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                                  : 'bg-indigo-500/20 text-indigo-300'
+                                              }`}
+                                            >
+                                              {src.scope === 'district' ? '🌐 地區' : '🔒 社內'}
+                                            </span>
+                                          )}
                                           {src.category && (
                                             <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 text-[10px]">
                                               {src.category}

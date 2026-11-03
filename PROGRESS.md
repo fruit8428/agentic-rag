@@ -64,3 +64,10 @@
 - [x] 3. 升級主代理四大工具智慧調度（`backend/app/routers/chat.py`：註冊 `delegate_to_document_subagent` 並串接混合檢索、Text-to-SQL、外部即時網路搜尋與全文件子代理）
 - [x] 4. 升級前端階層式代理推理視圖（`frontend/src/components/ChatView.tsx` 與 `frontend/src/App.tsx`：新增「🤖 模組 8：階層式子代理推理與嵌套工具調用樹 (Hierarchical Sub-Agent Trace)」，展示主代理委派原因、上下文壓縮率、子代理逐步推理與 3 階段嵌套工具卡片）
 - [x] 5. 端到端驗證測試與 GitHub 完整專案部署（全 8 模組完課 🎉）
+
+### 模組 9：地區與社內權限分級（3523 地區扶輪社）
+- [x] 1. 規劃並建立模組 9 實施計劃（`.agent/plans/9.地區與社內權限分級.md` + 子計劃 9a/9b/9c）
+- [x] 2. 建立資料庫結構與 RLS（`supabase/migrations/009_module9_clubs_and_scopes.sql`：`clubs`、`profiles`、`documents.scope/club_id`、`can_view_document()` 可見性規則、81 筆社名種子）
+- [x] 3. 後端權限與檢索過濾（`backend/app/services/visibility.py` 共用規則套用至混合檢索、Text-to-SQL、子代理與文件 API；`routers/clubs.py` 社內密碼加入／改密碼；`routers/admin.py` 管理員社與社友管理；bcrypt 密碼雜湊）
+- [x] 4. 前端加入社與管理介面（`JoinClubPage`、`ClubSettingsView`、`AdminView`、`IngestView` 上傳範圍選擇與 🌐/🔒 徽章、`ChatView` 來源徽章）
+- [x] 5. 端到端驗證（本機 45 項自動化測試全部通過：未加入社 403、跨社文件隔離、RLS 直連驗證、四條檢索路徑隔離、管理員刪社保護）

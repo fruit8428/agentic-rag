@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.auth import AuthenticatedUser, get_admin_supabase, require_admin
 from app.services import club_accounts as accounts
+from app.services import club_secrets
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -18,6 +19,8 @@ class AdminClubItem(BaseModel):
     activated: bool
     activation_code: Optional[str] = None   # 未啟用時才有值
     activated_at: Optional[str] = None
+    password: Optional[str] = None            # 已啟用且有紀錄時才有值（後台顯示用）
+    password_updated_at: Optional[str] = None
     document_count: int
     created_at: Optional[str] = None
 
@@ -38,7 +41,7 @@ class ResetClubPasswordRequest(BaseModel):
     new_password: str
 
 
-_CLUB_COLUMNS = "id, name, division, code, auth_user_id, activation_code, activated_at, created_at"
+_CLUB_COLUMNS = "id, name, division, code, auth_user_id, activation_code, activated_at, password_enc, password_updated_at, created_at"
 
 
 def _to_item(c: dict, doc_counts: dict[str, int]) -> AdminClubItem:
@@ -48,6 +51,8 @@ def _to_item(c: dict, doc_counts: dict[str, int]) -> AdminClubItem:
         activated=activated,
         activation_code=None if activated else c.get("activation_code"),
         activated_at=c.get("activated_at"),
+        password=club_secrets.decrypt_password(c.get("password_enc")) if activated else None,
+        password_updated_at=c.get("password_updated_at") if activated else None,
         document_count=doc_counts.get(c["id"], 0),
         created_at=c.get("created_at"),
     )
@@ -162,5 +167,5 @@ async def admin_reset_club_password(
     club = _get_club(admin, club_id)
     if not club.get("auth_user_id"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="此社尚未啟用，請把啟用碼交給該社做首次設定")
-    accounts.set_account_password(admin, club["auth_user_id"], payload.new_password)
+    accounts.set_club_password(admin, club_id, club["auth_user_id"], payload.new_password)
     return {"status": "ok", "id": club_id, "name": club["name"], "message": "社密碼已重設"}

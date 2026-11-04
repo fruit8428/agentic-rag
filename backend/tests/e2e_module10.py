@@ -101,6 +101,8 @@ try:
     code, lst = api("GET", "/api/admin/clubs", admin_tok)
     row_a = next(c for c in lst if c["id"] == ca["id"]); row_b = next(c for c in lst if c["id"] == cb["id"])
     check("管理員清單：甲社已啟用且不再顯示啟用碼", row_a["activated"] and row_a["activation_code"] is None, row_a)
+    check("管理員清單：甲社密碼紀錄 = 註冊時設定的密碼", row_a.get("password") == PW_A, row_a.get("password"))
+    check("管理員清單：未啟用的乙社沒有密碼", row_b.get("password") is None)
     check("管理員清單：乙社未啟用且有啟用碼", not row_b["activated"] and row_b["activation_code"], row_b)
     code, nb = api("POST", f"/api/admin/clubs/{cb['id']}/activation-code", admin_tok); check("重新產生乙社啟用碼", code == 200 and nb["activation_code"] != row_b["activation_code"], (code, nb))
     code, _ = api("POST", f"/api/admin/clubs/{ca['id']}/activation-code", admin_tok); check("已啟用社重產啟用碼 → 409", code == 409, code)
@@ -143,9 +145,12 @@ try:
     code, _ = api("POST", "/api/clubs/me/password", a_tok, json={"current_password": PW_A, "new_password": NEW_A}); check("甲社自行更改社密碼", code == 200, code)
     code, _ = login(ca["id"], PW_A); check("改密碼後舊密碼失效 → 401", code == 401, code)
     code, _ = login(ca["id"], NEW_A); check("改密碼後新密碼可登入", code == 200, code)
+    code, lst = api("GET", "/api/admin/clubs", admin_tok); check("社自行改密碼後後台紀錄同步更新", next(c for c in lst if c["id"] == ca["id"])["password"] == NEW_A)
     NEW_B = "reset-b-" + secrets.token_hex(4)
     code, _ = api("POST", f"/api/admin/clubs/{cb['id']}/reset-password", admin_tok, json={"new_password": NEW_B}); check("管理員重設乙社密碼", code == 200, code)
     code, _ = login(cb["id"], NEW_B); check("乙社用管理員重設的密碼登入", code == 200, code)
+    code, lst = api("GET", "/api/admin/clubs", admin_tok); check("管理員重設後後台紀錄同步更新", next(c for c in lst if c["id"] == cb["id"])["password"] == NEW_B)
+    code, pub = api("GET", "/api/auth/clubs"); check("公開清單不含密碼紀錄", all("password" not in c and "password_enc" not in c for c in pub))
 
     # ---------- 登入節流（記憶體版，正式環境多個執行個體時不保證） ----------
     codes = [login(cc["id"] if False else cb["id"], "wrong-" + str(i))[0] for i in range(9)]

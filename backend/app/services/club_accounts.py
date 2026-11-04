@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from supabase import Client, create_client
 
 from app.config import settings
+from app.services import club_secrets
 
 # 社帳號的合成 Email 網域（使用者永遠看不到，只是 Supabase Auth 需要一個唯一 Email）
 CLUB_EMAIL_DOMAIN = "clubs.3523.local"
@@ -78,9 +79,19 @@ def create_club_account(admin: Client, club: dict, password: str) -> str:
         on_conflict="user_id",
     ).execute()
     admin.table("clubs").update(
-        {"auth_user_id": user_id, "activated_at": now, "activation_code": None}
+        {"auth_user_id": user_id, "activated_at": now, "activation_code": None,
+         "password_enc": club_secrets.encrypt_password(password), "password_updated_at": now}
     ).eq("id", club["id"]).execute()
     return user_id
+
+
+def set_club_password(admin: Client, club_id: str, user_id: str, new_password: str) -> None:
+    """更換社密碼：改 Supabase Auth 的密碼，並更新後台可見的加密紀錄。"""
+    set_account_password(admin, user_id, new_password)
+    admin.table("clubs").update({
+        "password_enc": club_secrets.encrypt_password(new_password),
+        "password_updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", club_id).execute()
 
 
 def set_account_password(admin: Client, user_id: str, new_password: str) -> None:

@@ -52,6 +52,10 @@ async def change_my_club_password(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="目前的密碼錯誤")
     accounts.clear_failures(key)
 
-    accounts.set_account_password(get_admin_supabase(), user.id, payload.new_password)
+    admin = get_admin_supabase()
+    if user.club_id and not user.is_admin:
+        accounts.set_club_password(admin, user.club_id, user.id, payload.new_password)
+    else:
+        accounts.set_account_password(admin, user.id, payload.new_password)
     label = "管理員密碼" if user.is_admin and not user.club_id else "社密碼"
     return {"status": "ok", "club_id": user.club_id, "club_name": user.club_name, "message": f"{label}已更新"}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Plus, Trash2, KeyRound, Loader2, AlertCircle, CheckCircle2, RefreshCw, ShieldCheck, X, Copy, Check, Ticket,
+  Plus, Trash2, KeyRound, Loader2, AlertCircle, CheckCircle2, RefreshCw, ShieldCheck, X, Copy, Check, Ticket, Eye, EyeOff,
 } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 
@@ -12,6 +12,8 @@ interface AdminClub {
   activated: boolean
   activation_code: string | null
   activated_at: string | null
+  password: string | null
+  password_updated_at: string | null
   document_count: number
 }
 
@@ -36,6 +38,7 @@ export function AdminView({ accessToken }: AdminViewProps) {
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [shownPw, setShownPw] = useState<Set<string>>(new Set())
 
   // 表單欄位
   const [fName, setFName] = useState('')
@@ -80,16 +83,24 @@ export function AdminView({ accessToken }: AdminViewProps) {
     }
   }
 
-  const copyCode = async (club: AdminClub) => {
-    if (!club.activation_code) return
+  const copyText = async (id: string, label: string, value: string | null) => {
+    if (!value) return
     try {
-      await navigator.clipboard.writeText(club.activation_code)
-      setCopiedId(club.id)
-      setTimeout(() => setCopiedId((v) => (v === club.id ? null : v)), 1500)
+      await navigator.clipboard.writeText(value)
+      setCopiedId(id)
+      setTimeout(() => setCopiedId((v) => (v === id ? null : v)), 1500)
     } catch {
-      setNotice(`啟用碼：${club.activation_code}（無法自動複製，請手動抄寫）`)
+      setNotice(`${label}：${value}（無法自動複製，請手動抄寫）`)
     }
   }
+  const copyCode = (club: AdminClub) => copyText(club.id, '啟用碼', club.activation_code)
+  const togglePw = (id: string) =>
+    setShownPw((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   const submitDialog = () => {
     if (!dialog) return
@@ -199,7 +210,7 @@ export function AdminView({ accessToken }: AdminViewProps) {
                   <tr>
                     <th className="text-left px-4 py-2.5 font-medium">編號</th>
                     <th className="text-left px-4 py-2.5 font-medium">社名</th>
-                    <th className="text-left px-4 py-2.5 font-medium">狀態 / 啟用碼</th>
+                    <th className="text-left px-4 py-2.5 font-medium">啟用碼 / 社密碼</th>
                     <th className="text-right px-4 py-2.5 font-medium">文件</th>
                     <th className="px-4 py-2.5"></th>
                   </tr>
@@ -211,7 +222,23 @@ export function AdminView({ accessToken }: AdminViewProps) {
                       <td className="px-4 py-2.5 font-medium">{c.name}</td>
                       <td className="px-4 py-2.5">
                         {c.activated ? (
-                          <span className="text-emerald-300 text-xs inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> 已啟用</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-300 text-xs inline-flex items-center gap-1 shrink-0"><Check className="w-3.5 h-3.5" /> 已啟用</span>
+                            {c.password ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono">
+                                <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="tracking-wider">{shownPw.has(c.id) ? c.password : '••••••••'}</span>
+                                <button onClick={() => togglePw(c.id)} title={shownPw.has(c.id) ? '隱藏密碼' : '顯示密碼'} className="text-slate-400 hover:text-slate-100 cursor-pointer ml-1">
+                                  {shownPw.has(c.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                </button>
+                                <button onClick={() => copyText(c.id, '社密碼', c.password)} title="複製密碼" className="text-slate-400 hover:text-slate-100 cursor-pointer">
+                                  {copiedId === c.id ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-500" title="此社在密碼紀錄功能啟用前就設定了密碼；按「重設密碼」設定一次後即可顯示">密碼未記錄</span>
+                            )}
+                          </div>
                         ) : (
                           <button
                             onClick={() => copyCode(c)}

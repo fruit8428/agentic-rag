@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "").strip() or "fruit8428@gmail.com"
     # 模組 10：登入頁「忘記密碼？聯絡管理員」顯示的聯絡方式（預設同管理員 Email）
     ADMIN_CONTACT: str = os.getenv("ADMIN_CONTACT", "").strip() or os.getenv("ADMIN_EMAIL", "").strip() or "fruit8428@gmail.com"
+    # 模組 10：各社社密碼紀錄的加密金鑰（未設定則不記錄，管理後台看不到密碼）
+    CLUB_PASSWORD_SECRET: str = os.getenv("CLUB_PASSWORD_SECRET", "").strip()
 
 
 settings = Settings()

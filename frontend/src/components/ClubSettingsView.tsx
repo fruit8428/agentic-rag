@@ -1,14 +1,16 @@
 import React, { useState } from 'react'
 import { Building2, KeyRound, Loader2, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react'
-import { apiFetch, type MyClub } from '../lib/api'
+import { apiFetch, publicFetch, type MyClub, type SessionResponse } from '../lib/api'
+import { supabase } from '../lib/supabase'
 
 interface ClubSettingsViewProps {
   accessToken: string
   me: MyClub
+  onChanged?: () => void
 }
 
 // 社設定：顯示所屬社，並以目前密碼更換新的社密碼（管理員則是更換管理員密碼）
-export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
+export function ClubSettingsView({ accessToken, me, onChanged }: ClubSettingsViewProps) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -29,7 +31,12 @@ export function ClubSettingsView({ accessToken, me }: ClubSettingsViewProps) {
         method: 'POST',
         body: JSON.stringify({ current_password: current, new_password: next }),
       })
+      // Supabase 在改密碼後會讓原本的登入狀態失效，這裡用新密碼自動重新登入，使用者不會被登出
+      const body = me.club_id && me.role !== 'admin' ? { club_id: me.club_id, password: next } : { as_admin: true, password: next }
+      const s = await publicFetch<SessionResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify(body) })
+      await supabase.auth.setSession({ access_token: s.access_token, refresh_token: s.refresh_token })
       setSuccess(res.message || '密碼已更新')
+      onChanged?.()
       setCurrent('')
       setNext('')
       setConfirm('')

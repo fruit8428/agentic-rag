@@ -78,4 +78,5 @@
 - [x] 3. 後端（`services/club_accounts.py` 每社一個 Supabase Auth 帳號＋登入節流；`routers/auth_router.py` 公開社名清單／登入／啟用碼註冊；`routers/clubs.py` 改密碼；`routers/admin.py` 啟用碼配發／重產、重設社密碼、刪社連同帳號）
 - [x] 4. 前端（`AuthPage` 依參考圖重做：社名登入／首次進入(註冊)、記住社名、忘記密碼聯絡管理員；`AdminView` 顯示啟用狀態與一鍵複製啟用碼；移除 `JoinClubPage`）
 - [x] 5. 端到端驗證與部署（`backend/tests/e2e_module10.py`：本機 60 項、正式網址 59 項全部通過；已部署至 https://agentic-rag-dusky.vercel.app ）
-- [x] 6. 管理後台可查看各社目前社密碼（`services/club_secrets.py` 以 `CLUB_PASSWORD_SECRET` 加密存於 `clubs.password_enc`；`AdminView` 顯示／複製；測試增為 65 項）
+- [x] 6. 管理後台可查看各社目前社密碼（`services/club_secrets.py` 以 `CLUB_PASSWORD_SECRET` 加密存於 `clubs.password_enc`；`AdminView` 顯示／複製）
+- [x] 7. 全部社以統一預設密碼直接啟用（`backend/scripts/activate_all_clubs.py`；新社預設自動啟用；仍用預設密碼的社登入後顯示更改提醒；改密碼後自動重新登入；測試增為 73 項）

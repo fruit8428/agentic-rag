@@ -70,13 +70,26 @@ try:
     code, _ = api("GET", "/api/clubs/me"); check("沒有 token → 401/403", code in (401, 403), code)
 
     # ---------- 管理員建測試社（自動配發啟用碼） ----------
-    code, ca = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試甲社-{tag}", "division": "99", "code": "99-1"})
+    code, ca = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試甲社-{tag}", "division": "99", "code": "99-1", "auto_activate": False})
     check("新增甲社並取得啟用碼", code == 200 and not ca["activated"] and ca["activation_code"], (code, ca)); created_club_ids.append(ca["id"])
-    code, cb = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試乙社-{tag}", "division": "99", "code": "99-2"})
+    code, cb = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試乙社-{tag}", "division": "99", "code": "99-2", "auto_activate": False})
     check("新增乙社", code == 200, (code, cb)); created_club_ids.append(cb["id"])
-    code, cc = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試丙社-{tag}", "division": "99", "code": "99-3"})
+    code, cc = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試丙社-{tag}", "division": "99", "code": "99-3", "auto_activate": False})
     check("新增丙社", code == 200, (code, cc)); created_club_ids.append(cc["id"])
     code, _ = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試甲社-{tag}"}); check("重複社名 → 409", code == 409, code)
+
+    # ---------- 預設密碼直接啟用（新社預設行為） ----------
+    code, cd = api("POST", "/api/admin/clubs", admin_tok, json={"name": f"測試丁社-{tag}", "division": "99", "code": "99-4"})
+    check("新增丁社：預設直接啟用且後台看得到預設密碼", code == 200 and cd["activated"] and cd["password"] == settings.CLUB_DEFAULT_PASSWORD, (code, cd)); created_club_ids.append(cd["id"])
+    code, sd = login(cd["id"], settings.CLUB_DEFAULT_PASSWORD); check("丁社用預設密碼登入", code == 200, (code, sd))
+    d_tok = sd["access_token"]
+    code, me_d = api("GET", "/api/clubs/me", d_tok); check("丁社 /me 標示仍用預設密碼", code == 200 and me_d["using_default_password"] is True, me_d)
+    NEW_D = "own-d-" + secrets.token_hex(4)
+    code, _ = api("POST", "/api/clubs/me/password", d_tok, json={"current_password": settings.CLUB_DEFAULT_PASSWORD, "new_password": NEW_D}); check("丁社自行改掉預設密碼", code == 200, code)
+    code, _ = api("GET", "/api/clubs/me", d_tok); check("改密碼後舊 session 失效（前端需自動重新登入）", code == 401, code)
+    code, sd = login(cd["id"], NEW_D); d_tok = sd["access_token"]
+    code, me_d = api("GET", "/api/clubs/me", d_tok); check("重新登入後 /me 不再標示預設密碼", code == 200 and me_d["using_default_password"] is False, me_d)
+    code, _ = login(cd["id"], settings.CLUB_DEFAULT_PASSWORD); check("改完後預設密碼失效 → 401", code == 401, code)
 
     # ---------- 首次進入(註冊) ----------
     code, _ = login(ca["id"], PW_A); check("未啟用的社登入 → 409", code == 409, code)

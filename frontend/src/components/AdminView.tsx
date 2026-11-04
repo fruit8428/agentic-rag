@@ -110,7 +110,7 @@ export function AdminView({ accessToken }: AdminViewProps) {
           method: 'POST',
           body: JSON.stringify({ name: fName, division: fDivision || null, code: fCode || null }),
         })
-        return `已新增「${c.name}」，啟用碼：${c.activation_code}`
+        return c.activated ? `已新增「${c.name}」，已用預設密碼啟用，執秘登入後請自行更改` : `已新增「${c.name}」，啟用碼：${c.activation_code}`
       })
     }
     if (dialog.kind === 'reset') {
@@ -155,7 +155,7 @@ export function AdminView({ accessToken }: AdminViewProps) {
               </span>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              把「啟用碼」交給各社執秘，執秘在登入頁「首次進入(註冊)」輸入啟用碼並自訂社密碼後，全社即可用社名登入。
+              各社以「社名 + 社密碼」登入。新社預設使用地區統一密碼，執秘登入後可在「社設定」自行更改；忘記密碼時在此「重設密碼」。
             </p>
           </div>
           <button
@@ -313,7 +313,7 @@ export function AdminView({ accessToken }: AdminViewProps) {
                   <input className={inputCls} placeholder="分區（例如 4）" value={fDivision} onChange={(e) => setFDivision(e.target.value)} />
                   <input className={inputCls} placeholder="編號（例如 04-8）" value={fCode} onChange={(e) => setFCode(e.target.value)} />
                 </div>
-                <p className="text-xs text-slate-400">建立後系統會自動產生啟用碼，請交給該社執秘做首次設定。</p>
+                <p className="text-xs text-slate-400">建立後立即可用地區統一的預設密碼登入，請通知該社執秘登入後自行更改。</p>
               </div>
             )}
             {dialog.kind === 'reset' && (

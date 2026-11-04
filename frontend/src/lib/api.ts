@@ -44,6 +44,7 @@ export interface MyClub {
   role: 'member' | 'admin'
   club_id: string | null
   club_name: string | null
+  using_default_password: boolean
 }
 
 export interface ClubPublic {

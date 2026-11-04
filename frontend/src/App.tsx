@@ -152,6 +152,17 @@ export default function App() {
         </div>
       </header>
 
+      {/* 仍使用統一預設密碼：提醒盡快更改 */}
+      {me.using_default_password && activeTab !== 'club' && (
+        <div className="px-4 sm:px-6 py-2 bg-amber-500/10 border-b border-amber-500/30 text-amber-200 text-xs sm:text-sm flex flex-wrap items-center gap-2 shrink-0">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>貴社目前仍使用地區統一的預設密碼，任何知道預設密碼的人都能登入。請盡快到「社設定」更改社密碼。</span>
+          <button onClick={() => setActiveTab('club')} className="ml-auto px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-100 font-medium cursor-pointer">
+            立即更改
+          </button>
+        </div>
+      )}
+
       {/* 主內容視圖 */}
       {activeTab === 'chat' && <ChatView accessToken={session.access_token} />}
       {activeTab === 'ingest' && (
@@ -162,7 +173,7 @@ export default function App() {
           isAdmin={isAdmin}
         />
       )}
-      {activeTab === 'club' && <ClubSettingsView accessToken={session.access_token} me={me} />}
+      {activeTab === 'club' && <ClubSettingsView accessToken={session.access_token} me={me} onChanged={() => setMe({ ...me, using_default_password: false })} />}
       {activeTab === 'admin' && isAdmin && <AdminView accessToken={session.access_token} />}
     </div>
   )

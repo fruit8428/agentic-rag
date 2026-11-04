@@ -140,6 +140,8 @@ export function AuthPage() {
   }
 
   const isAdminSelected = selected === ADMIN_VALUE
+  // 還有社需要用啟用碼做首次設定時才顯示註冊分頁
+  const showRegister = clubsLoading || clubs.some((c) => !c.activated)
   const selectCls =
     'w-full px-4 py-3 bg-slate-100 border border-slate-300 rounded-xl text-base text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 transition appearance-none'
   const inputCls =
@@ -157,14 +159,14 @@ export function AuthPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Agentic RAG AI 系統</h1>
         </div>
 
-        {/* 切換「社名登入 / 首次進入(註冊)」 */}
-        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
+        {/* 切換「社名登入 / 首次進入(註冊)」：所有社都已啟用時只剩登入 */}
+        <div className={`grid ${showRegister ? 'grid-cols-2' : 'grid-cols-1'} gap-1 p-1 bg-slate-950 rounded-2xl border border-slate-800 mb-6`}>
           {(
             [
               ['login', '社名登入'],
               ['register', '首次進入(註冊)'],
             ] as const
-          ).map(([key, label]) => (
+          ).filter(([key]) => key === 'login' || showRegister).map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -358,9 +360,13 @@ export function AuthPage() {
           </button>
         </form>
 
-        {mode === 'register' && (
+        {mode === 'register' ? (
           <p className="mt-5 text-xs text-slate-500 leading-relaxed text-center">
             還沒拿到啟用碼？請向地區管理員索取。已設定過的社請切換到「社名登入」。
+          </p>
+        ) : (
+          <p className="mt-5 text-xs text-slate-500 leading-relaxed text-center">
+            首次登入請使用地區統一提供的預設密碼，登入後到「社設定」更改成貴社自己的密碼。
           </p>
         )}
       </div>

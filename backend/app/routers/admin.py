@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth import AuthenticatedUser, get_admin_supabase, require_admin
+from app.config import settings
 from app.services import club_accounts as accounts
 from app.services import club_secrets
 
@@ -29,6 +30,7 @@ class CreateClubRequest(BaseModel):
     name: str
     division: Optional[str] = None
     code: Optional[str] = None
+    auto_activate: bool = True   # True：直接用預設社密碼啟用；False：配發啟用碼由該社自行首次設定
 
 
 class UpdateClubRequest(BaseModel):
@@ -86,7 +88,7 @@ async def admin_list_clubs(user: AuthenticatedUser = Depends(require_admin)):
 
 @router.post("/clubs", response_model=AdminClubItem)
 async def admin_create_club(payload: CreateClubRequest, user: AuthenticatedUser = Depends(require_admin)):
-    """新增社並自動配發啟用碼（交給該社執秘做首次設定）。"""
+    """新增社。預設直接以統一預設密碼啟用（執秘登入後自行更改）；auto_activate=false 則配發啟用碼。"""
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="社名不能為空")
@@ -99,7 +101,13 @@ async def admin_create_club(payload: CreateClubRequest, user: AuthenticatedUser 
         "code": (payload.code or "").strip() or None,
         "activation_code": accounts.generate_activation_code(),
     }).execute()
-    return _to_item(ins.data[0], {})
+    club = ins.data[0]
+    if payload.auto_activate:
+        try:
+            accounts.create_club_account(admin, club, settings.CLUB_DEFAULT_PASSWORD)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"社已建立，但建立登入帳號失敗：{e}")
+    return _to_item(_get_club(admin, club["id"]), {})
 
 
 @router.patch("/clubs/{club_id}", response_model=AdminClubItem)

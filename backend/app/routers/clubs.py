@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth import AuthenticatedUser, get_admin_supabase, get_current_user, require_club_member
+from app.config import settings
 from app.services import club_accounts as accounts
+from app.services import club_secrets
 
 router = APIRouter(prefix="/api/clubs", tags=["clubs"])
 
@@ -16,6 +18,7 @@ class MyClubResponse(BaseModel):
     role: str
     club_id: Optional[str] = None
     club_name: Optional[str] = None
+    using_default_password: bool = False   # 社仍使用統一預設密碼 → 前端提醒更改
 
 
 class ChangeClubPasswordRequest(BaseModel):
@@ -25,12 +28,18 @@ class ChangeClubPasswordRequest(BaseModel):
 
 @router.get("/me", response_model=MyClubResponse)
 async def my_club(user: AuthenticatedUser = Depends(get_current_user)):
+    using_default = False
+    if user.club_id and not user.is_admin:
+        row = get_admin_supabase().table("clubs").select("password_enc").eq("id", user.club_id).execute().data
+        if row:
+            using_default = club_secrets.decrypt_password(row[0].get("password_enc")) == settings.CLUB_DEFAULT_PASSWORD
     return MyClubResponse(
         user_id=user.id,
         email=user.email,
         role=user.role,
         club_id=user.club_id,
         club_name=user.club_name,
+        using_default_password=using_default,
     )
 
 

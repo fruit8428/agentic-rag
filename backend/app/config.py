@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # 模組 10：新社建立時統一使用的預設社密碼（執秘登入後應自行更改）
     CLUB_DEFAULT_PASSWORD: str = os.getenv("CLUB_DEFAULT_PASSWORD", "").strip() or "123456"
 
+    # 報名系統橋接（AI 小幫手回答「我們社報名了什麼、繳費了沒」）。全部選填；沒設定時工具會回「尚未連接報名系統」
+    SIGNUP_SUPABASE_URL: str = os.getenv("SIGNUP_SUPABASE_URL", "").strip()
+    SIGNUP_SUPABASE_ANON_KEY: str = os.getenv("SIGNUP_SUPABASE_ANON_KEY", "").strip()
+    SIGNUP_STORAGE_KEY: str = os.getenv("SIGNUP_STORAGE_KEY", "").strip() or "rotary_3523_spa_data_v3"
+    SIGNUP_PAYMENT_KEY: str = os.getenv("SIGNUP_PAYMENT_KEY", "").strip() or "rotary_3523_payment_records_v1"
+    SIGNUP_SITE_URL: str = os.getenv("SIGNUP_SITE_URL", "").strip()
+
 
 settings = Settings()
 

@@ -90,7 +90,7 @@ interface SourceChunk {
   chunk_index: number
   content: string
   similarity: number
-  match_type?: 'hybrid' | 'keyword' | 'vector' | 'sql' | 'web' | 'subagent'
+  match_type?: 'hybrid' | 'keyword' | 'vector' | 'sql' | 'web' | 'subagent' | 'signup'
   keyword_rank?: number | null
   vector_rank?: number | null
   vector_similarity?: number | null
@@ -562,6 +562,8 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                 ? '🤖 主代理正在委派「全文件深度分析子代理 (Isolated Sub-Agent)」於獨立隔離上下文執行：'
                                 : msg.toolName === 'query_structured_database'
                                 ? 'Agent 正在執行 Text-to-SQL 結構化數據與全表統計查詢：'
+                                : msg.toolName === 'get_my_club_registration'
+                                ? '🗂️ Agent 正在讀取報名系統即時資料（本社報名與繳費）：'
                                 : msg.toolName === 'search_web_fallback'
                                 ? 'Agent 正在執行外部即時網路搜索 (Web Search Fallback)：'
                                 : 'Agent 正在執行混合檢索 (關鍵字 + 向量 + RRF + AI 重排序)：'}
@@ -610,6 +612,8 @@ export function ChatView({ accessToken }: ChatViewProps) {
                                           <span className="truncate">
                                             {matchType === 'subagent'
                                               ? `${src.filename}`
+                                              : matchType === 'signup'
+                                              ? `🗂️ ${src.filename}`
                                               : matchType === 'sql'
                                               ? `🗄️ ${src.filename}`
                                               : matchType === 'web'

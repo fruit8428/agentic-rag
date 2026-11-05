@@ -18,6 +18,7 @@ from app.services.additional_tools import (
     execute_web_search_tool,
 )
 from app.services.subagent import execute_isolated_subagent
+from app.services.signup_bridge import execute_signup_registration_tool
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -42,8 +43,12 @@ SYSTEM_PROMPT = """你是一個專業、友善且樂於助人的多工具與階�
    - 當用戶詢問「即時新聞、今天天氣如何、外部公開網站資訊」，或問題明顯不在私有知識庫文件中時，呼叫此工具上網檢索。
 4. **工具 D：`delegate_to_document_subagent`（模組 8：委派具備獨立隔離上下文的全文件深度分析子代理）**
    - 當用戶提出「全文件深度分析」、「派子代理分析」、「整份文件有哪些獎項與頒獎時段流程總表？」、「分析某整個分區（如第四分區 04-1～04-7）各社得獎分布」或「跨全文件章節綜合報告」時，請務必呼叫此工具，將全文件掃描任務委派給具備獨立隔離上下文的子代理（`DocumentAnalystSubAgent`）執行！
-5. **可信度來源歸因（Attribution for Trust）**：
-   - 回答時請明確標註資訊來源歸因（『📄 來源：內部知識庫混合檢索』、『🗄️ 來源：Text-to-SQL 結構化統計』、『🌐 來源：外部網路搜尋』或『🤖 來源：隔離上下文子代理全文件深度分析』）。
+5. **工具 E：`get_my_club_registration`（報名系統即時查詢）**
+   - 凡是問到「我們社／本社／我報名了嗎、報了誰、報了幾個人、繳費了沒、繳了多少、還要繳多少、匯款帳號、匯款有沒有核對到」等與**本社報名或繳費**有關的問題，一律呼叫此工具，**不得**用知識庫或記憶猜測。
+   - 使用者若詢問**其他社**的報名或繳費資料，直接拒絕，說明「只能查詢自己社的報名狀態」，不要呼叫任何工具。
+   - 工具回傳「沒有任何報名紀錄」時，就明確回答沒有，不要編造。
+6. **可信度來源歸因（Attribution for Trust）**：
+   - 回答時請明確標註資訊來源歸因（『📄 來源：內部知識庫混合檢索』、『🗄️ 來源：Text-to-SQL 結構化統計』、『🌐 來源：外部網路搜尋』、『🗂️ 來源：報名系統即時資料』或『🤖 來源：隔離上下文子代理全文件深度分析』）。
 """
 
 RAG_TOOLS = [
@@ -120,6 +125,23 @@ RAG_TOOLS = [
                     },
                 },
                 "required": ["task_description"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_my_club_registration",
+            "description": "報名系統即時查詢工具：當使用者詢問本社（自己社）在各活動的報名狀態、報名名單、報名人數、報名總金額、繳費狀態、應繳金額或匯款帳號時呼叫。只會回傳登入社自己的資料。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "club_name": {
+                        "type": "string",
+                        "description": "選填。僅地區管理員可指定要查詢的社名；一般使用者傳入也會被忽略，固定查詢登入社。",
+                    }
+                },
+                "required": [],
             },
         },
     },
@@ -585,6 +607,29 @@ async def run_agentic_rag_turn(
                 }
                 tool_outputs.append(
                     f"主代理已委派『全文件深度分析子代理 (DocumentAnalystSubAgent)』於獨立隔離上下文完成全文件掃描與彙整，回傳精華報告如下：\n\n{sub_res.get('distilled_report')}"
+                )
+
+            elif tool_name == "get_my_club_registration":
+                requested_club = args.get("club_name")
+                yield {
+                    "type": "tool_start",
+                    "tool": "get_my_club_registration",
+                    "query": (requested_club if user.is_admin and requested_club else user.club_name) or "本社",
+                }
+                signup_res = await execute_signup_registration_tool(
+                    user=user,
+                    requested_club_name=requested_club,
+                )
+                if signup_res.get("source_card"):
+                    retrieved_sources.append(signup_res["source_card"])
+                yield {
+                    "type": "tool_end",
+                    "tool": "get_my_club_registration",
+                    "query": signup_res.get("club_name") or "本社",
+                    "sources": retrieved_sources,
+                }
+                tool_outputs.append(
+                    f"透過 `get_my_club_registration` 直接讀取報名系統資料庫（唯讀）結果如下（請據實回答，沒有紀錄就說沒有；來源歸因請標『🗂️ 來源：報名系統即時資料』）：\n\n{signup_res.get('summary_markdown')}"
                 )
 
         # 第二階段：將多工具或子代理檢索結果注入上下文，串流生成最終回答（含防截斷保護与來源歸因）

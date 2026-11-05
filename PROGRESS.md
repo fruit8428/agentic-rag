@@ -85,5 +85,5 @@
 - [x] 1. 後端工具 `get_my_club_registration`（`backend/app/services/signup_bridge.py`：以 anon key 唯讀報名系統 Supabase `app_storage`，60 秒快取；一般使用者強制查登入社、管理員可指定社名；`routers/chat.py` 註冊工具 E 與 system prompt 規則）
 - [x] 2. 設定與文件（`config.py` 新增 `SIGNUP_SUPABASE_URL / SIGNUP_SUPABASE_ANON_KEY / SIGNUP_STORAGE_KEY / SIGNUP_PAYMENT_KEY / SIGNUP_SITE_URL`，皆選填；`.env.example` 加說明；前端 `ChatView` 顯示 🗂️ 報名系統來源卡片）
 - [x] 3. 測試（`backend/tests/test_signup_bridge.py` 純函式 11 項；`backend/tests/e2e_signup_tool.py` 端到端 11 項：內建假 Supabase REST 不碰正式報名資料，驗證本社名單、繳費狀態、問他社被拒且不洩漏、無報名明確說沒有、管理員指定社）
-- [ ] 4. 登入頁支援 `?club=` 預選社名（由報名系統「AI 小幫手」按鈕帶入）
+- [x] 4. 登入頁支援 `?club=` 預選社名（由報名系統「AI 小幫手」按鈕帶入；`AuthPage.tsx` 載入清單後比對社名、自動勾「記住社名」並顯示提示）
 

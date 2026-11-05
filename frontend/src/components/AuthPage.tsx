@@ -46,12 +46,28 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  // 從報名系統「AI 小幫手」按鈕帶入的社名（網址 ?club=社名），載入清單後自動選好
+  const [prefilledClub, setPrefilledClub] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     publicFetch<ClubPublic[]>('/api/auth/clubs')
       .then((list) => {
-        if (!cancelled) setClubs(list)
+        if (cancelled) return
+        setClubs(list)
+        try {
+          const wanted = (new URLSearchParams(window.location.search).get('club') || '').trim()
+          if (wanted) {
+            const hit = list.find((c) => c.name.trim() === wanted)
+            if (hit) {
+              setSelected(hit.id)
+              setRemember(true)
+              setPrefilledClub(hit.name)
+            }
+          }
+        } catch {
+          /* 網址參數解析失敗就當沒帶 */
+        }
       })
       .catch((e) => {
         if (!cancelled) setClubsError(e.message || '無法載入社名清單')
@@ -202,7 +218,12 @@ export function AuthPage() {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* 所屬社名 */}
           <div>
-            <label className={labelCls}>所屬社名</label>
+            <label className={labelCls}>
+              所屬社名
+              {prefilledClub && mode === 'login' && (
+                <span className="ml-2 text-[11px] font-normal text-emerald-400">已從報名系統帶入「{prefilledClub}」，輸入社密碼即可</span>
+              )}
+            </label>
             <div className="relative">
               <select
                 required

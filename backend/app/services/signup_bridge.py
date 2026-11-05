@@ -113,6 +113,29 @@ def _fee_for(chair_config: dict, cat: Optional[dict], sub_event: str) -> Optiona
         return None
 
 
+def _format_bank_account(acct) -> Optional[str]:
+    """chairConfig.bankAccount 可能是字串或 {bankName, bankCode, branch, accountName, accountNo}，統一成一行文字。"""
+    if not acct:
+        return None
+    if isinstance(acct, str):
+        return acct.strip() or None
+    if not isinstance(acct, dict):
+        return None
+    no = (acct.get("accountNo") or "").strip()
+    if not no:
+        return None
+    parts = [(acct.get("bankName") or "").strip()]
+    if acct.get("bankCode"):
+        parts[0] += f"（代碼 {acct['bankCode']}）"
+    if acct.get("branch"):
+        parts.append(str(acct["branch"]).strip())
+    line = " ".join(p for p in parts if p)
+    line += f"，帳號 {no}"
+    if acct.get("accountName"):
+        line += f"，戶名 {acct['accountName']}"
+    return line
+
+
 def _item_line(item: dict) -> str:
     parts = []
     role = (item.get("role") or "").strip()
@@ -163,13 +186,13 @@ def summarize_club_registration(state: dict, club_name: str) -> dict:
 
     # 2. 該社的繳費紀錄（分攤金類活動可能沒有報名表、只有繳費紀錄）
     for pkey, records in payments.items():
+        # 只認「大類id::子活動名稱」格式；舊版的 seminars / conference 兩桶報名系統已不再讀取，這裡也跳過
+        if "::" not in pkey:
+            continue
         rec = (records or {}).get(club_name) if isinstance(records, dict) else None
         if not rec:
             continue
-        if "::" in pkey:
-            cat_id, sub_event = pkey.split("::", 1)
-        else:
-            cat_id, sub_event = pkey, pkey  # 舊格式桶，保留原字串
+        cat_id, sub_event = pkey.split("::", 1)
         cat = next((c for c in categories if c.get("id") == cat_id), None)
         entry = events.setdefault(sub_event, {
             "sub_event": sub_event,
@@ -200,7 +223,7 @@ def summarize_club_registration(state: dict, club_name: str) -> dict:
     return {
         "club_name": club_name,
         "division": _find_division(state.get("divisionsData") or [], club_name),
-        "bank_account": chair_config.get("bankAccount") or None,
+        "bank_account": _format_bank_account(chair_config.get("bankAccount")),
         "events": sorted(events.values(), key=lambda e: e["sub_event"]),
         "data_updated_at": state.get("lastUpdated"),
     }

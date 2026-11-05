@@ -48,6 +48,7 @@ FAKE_STATE = {
         "seminars::1. 獎助金管理研討會 (GMS)": {
             "測試甲社": {"status": "PAID_EMAIL", "amount": 12000, "method": "銀行匯款", "date": "2026-10-20"},
         },
+        "conference": {"測試甲社": {"status": "PAID_EMAIL", "amount": 20000}},  # 舊格式桶，必須被忽略
     },
     "lastUpdated": "2026-11-05T01:00:00Z",
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useDistrict } from '../lib/district'
 import {
   UploadCloud,
   FileText,
@@ -79,6 +80,7 @@ interface IngestViewProps {
 }
 
 export function IngestView({ accessToken, userId, clubName, isAdmin }: IngestViewProps) {
+  const district = useDistrict()
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   // 模組 9：上傳範圍。一般社友只能上傳社內；管理員可選地區公開（沒有所屬社時預設地區）
   const [uploadScope, setUploadScope] = useState<'club' | 'district'>(isAdmin && !clubName ? 'district' : 'club')
@@ -539,7 +541,7 @@ export function IngestView({ accessToken, userId, clubName, isAdmin }: IngestVie
             )}
           </div>
           <span className="text-[11px] text-slate-500">
-            {uploadScope === 'district' ? '全 3523 地區社友都能查閱' : '只有貴社社友能查閱'}
+            {uploadScope === 'district' ? `全 ${district.code ? district.code + ' ' : ''}地區社友都能查閱` : '只有貴社社友能查閱'}
           </span>
         </div>
 

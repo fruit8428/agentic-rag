@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { apiFetch, type MyClub } from './lib/api'
+import { useDistrict } from './lib/district'
 import { AuthPage } from './components/AuthPage'
 import { ChatView } from './components/ChatView'
 import { IngestView } from './components/IngestView'
@@ -19,6 +20,11 @@ export default function App() {
   const [me, setMe] = useState<MyClub | null>(null)
   const [meError, setMeError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('chat')
+  const district = useDistrict()
+
+  useEffect(() => {
+    document.title = `${district.name}知識庫`
+  }, [district.name])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -117,7 +123,7 @@ export default function App() {
             <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
               <Sparkles className="w-4 h-4" />
             </div>
-            <span className="font-bold text-white tracking-tight">3523 地區知識庫</span>
+            <span className="font-bold text-white tracking-tight">{district.code ? `${district.code} 地區知識庫` : '地區知識庫'}</span>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 inline-flex items-center gap-1">
               <Building2 className="w-3 h-3" />
               {me.club_name || (isAdmin ? '地區管理員' : '未加入')}

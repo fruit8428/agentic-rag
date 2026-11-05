@@ -24,6 +24,8 @@ class ClubPublicItem(BaseModel):
 
 class AuthConfig(BaseModel):
     admin_contact: Optional[str] = None
+    district_code: str = ""
+    district_name: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -68,8 +70,12 @@ async def public_clubs():
 
 @router.get("/config", response_model=AuthConfig)
 async def auth_config():
-    """登入頁「忘記密碼？聯絡管理員」用的聯絡方式。"""
-    return AuthConfig(admin_contact=settings.ADMIN_CONTACT or None)
+    """登入頁用的公開設定：管理員聯絡方式、地區代號與名稱（前端標題、信件主旨用）。"""
+    return AuthConfig(
+        admin_contact=settings.ADMIN_CONTACT or None,
+        district_code=settings.DISTRICT_CODE,
+        district_name=settings.DISTRICT_NAME,
+    )
 
 
 @router.post("/login", response_model=SessionResponse)

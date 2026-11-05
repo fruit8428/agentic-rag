@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useDistrict } from '../lib/district'
 
 // AI 在 Markdown 表格格子內常用 <br> 換行（表格格子不能直接換行）。
 // react-markdown 為了安全預設不渲染 HTML，會把 <br> 當純文字顯示。
@@ -131,6 +132,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ accessToken }: ChatViewProps) {
+  const district = useDistrict()
   const [threads, setThreads] = useState<ThreadItem[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<MessageItem[]>([])
@@ -518,7 +520,7 @@ export function ChatView({ accessToken }: ChatViewProps) {
                 {[
                   '請問松青社有誰得獎？',
                   '幫我用 SQL 統計目前知識庫共有幾份文件、幾個分塊，以及松青社與民生社的得獎筆數？',
-                  '請上網搜尋國際扶輪 3523 地區的官方網站與最新活動資訊？',
+                  `請上網搜尋${district.name}的官方網站與最新活動資訊？`,
                   '請派子代理對整份年會頒獎名單進行全文件深度分析，整理第三全會與第四全會的所有獎項梯次、集合時間，並分析第四分區（04-1～04-7）各社的得獎分布！',
                 ].map((sample) => (
                   <button

@@ -731,6 +731,7 @@ async def chat_stream(
     now_str = f"{now_tw.strftime('%Y年%m月%d日 %H:%M:%S')} ({weekdays[now_tw.weekday()]})"
     dynamic_system_prompt = (
         f"{SYSTEM_PROMPT}\n\n"
+        f"【服務對象】：你是「{settings.DISTRICT_NAME}」的扶輪知識庫 AI 助理，使用者是本地區各扶輪社的執秘與社友；提到地區時一律指 {settings.DISTRICT_NAME}。\n"
         f"【系統即時時鐘】：目前台灣標準時間（UTC+8）為 **{now_str}**。若使用者詢問現在幾點或今天日期，請直接根據此精確時間回答。"
     )
 

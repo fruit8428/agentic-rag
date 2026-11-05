@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { publicFetch, type ClubPublic, type SessionResponse } from '../lib/api'
+import { useDistrict } from '../lib/district'
 import {
   Sparkles, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle, Building2, KeyRound, ShieldCheck, Mail, X,
 } from 'lucide-react'
@@ -34,6 +35,7 @@ export function AuthPage() {
   const [clubsLoading, setClubsLoading] = useState(true)
   const [clubsError, setClubsError] = useState<string | null>(null)
   const [adminContact, setAdminContact] = useState<string | null>(null)
+  const district = useDistrict()
 
   const remembered = useMemo(readRemembered, [])
   const [selected, setSelected] = useState<string>(remembered)
@@ -349,7 +351,7 @@ export function AuthPage() {
                 <p>社密碼由地區管理員重設。請聯絡地區管理員，告知貴社社名即可。</p>
                 {adminContact && (
                   <a
-                    href={`mailto:${adminContact}?subject=${encodeURIComponent('3523 地區知識庫：申請重設社密碼')}`}
+                    href={`mailto:${adminContact}?subject=${encodeURIComponent(`${district.name}知識庫：申請重設社密碼`)}`}
                     className="inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200 underline underline-offset-2"
                   >
                     <Mail className="w-3.5 h-3.5" /> {adminContact}

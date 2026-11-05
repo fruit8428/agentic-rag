@@ -10,8 +10,9 @@ from supabase import Client, create_client
 from app.config import settings
 from app.services import club_secrets
 
-# 社帳號的合成 Email 網域（使用者永遠看不到，只是 Supabase Auth 需要一個唯一 Email）
-CLUB_EMAIL_DOMAIN = "clubs.3523.local"
+# 社帳號的合成 Email 網域（使用者永遠看不到，只是 Supabase Auth 需要一個唯一 Email）。
+# 依地區代號組成：3523 → clubs.3523.local（與既有帳號相同，不會影響已啟用的社）
+CLUB_EMAIL_DOMAIN = f"clubs.{settings.DISTRICT_CODE}.local"
 # 啟用碼字元集：排除 0/O/1/I 等容易看錯的字
 _CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 

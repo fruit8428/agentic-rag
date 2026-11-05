@@ -2,7 +2,7 @@
 報名系統橋接（Signup Bridge）
 
 讓 AI 小幫手能回答「我們社報名了什麼、繳費了沒」這類問題。
-資料來源是「國際扶輪 3523 地區活動整合報名系統」的 Supabase（與本專案不同的 Supabase 專案），
+資料來源是本地區「活動整合報名系統」的 Supabase（與本專案不同的 Supabase 專案，由 SIGNUP_SUPABASE_URL 指定），
 該系統把整個狀態存成一包 JSON 放在 `app_storage` 表，本模組只用 anon key **唯讀**取回並整理。
 
 安全邊界：

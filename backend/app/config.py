@@ -39,6 +39,11 @@ def _require_supabase_key(name: str) -> str:
 
 
 class Settings(BaseSettings):
+    # ===== 地區設定（每個地區都不同）=====
+    # 地區代號與名稱：顯示在前端標題、AI 提示詞，以及新社帳號的合成 Email 網域（clubs.<代號>.local）
+    DISTRICT_CODE: str = os.getenv("DISTRICT_CODE", "").strip() or "3523"
+    DISTRICT_NAME: str = os.getenv("DISTRICT_NAME", "").strip() or f"國際扶輪 {os.getenv('DISTRICT_CODE', '').strip() or '3523'} 地區"
+
     # Supabase
     SUPABASE_URL: str = _require("SUPABASE_URL")
     SUPABASE_ANON_KEY: str = _require_supabase_key("SUPABASE_ANON_KEY")

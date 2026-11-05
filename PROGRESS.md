@@ -87,3 +87,5 @@
 - [x] 3. 測試（`backend/tests/test_signup_bridge.py` 純函式 11 項；`backend/tests/e2e_signup_tool.py` 端到端 11 項：內建假 Supabase REST 不碰正式報名資料，驗證本社名單、繳費狀態、問他社被拒且不洩漏、無報名明確說沒有、管理員指定社）
 - [x] 4. 登入頁支援 `?club=` 預選社名（由報名系統「AI 小幫手」按鈕帶入；`AuthPage.tsx` 載入清單後比對社名、自動勾「記住社名」並顯示提示）
 - [x] 5. 安全加固（`services/rate_limit.py` 每社每分鐘 `CHAT_RATE_LIMIT_PER_MINUTE` 次（預設 10）滑動視窗，`chat_stream()` 開頭即檢查、超過回 429 含 Retry-After；`tests/e2e_rate_limit.py` 5 項：未登入 401/403、假 token 401、超限 429；金鑰盤點：service role 只在後端與測試腳本、前端無）
+- [x] 6. 去地區化（`config.py` 新增 `DISTRICT_CODE` / `DISTRICT_NAME`（預設 3523）；合成 Email 網域改 `clubs.<代號>.local`；`/api/auth/config` 回傳地區資訊，前端 `lib/district.ts` 的 `useDistrict()` 供標題、登入頁信件主旨、上傳範圍說明、範例提問使用；system prompt 加「服務對象」；009 遷移檔移除 3523 種子，名單改 `supabase/seed/clubs.<代號>.csv` + `scripts/seed_clubs.py --district`；`.env.example` 分成「每個地區都不同／所有地區共用」兩區；e2e_module10 73/73 通過）
+

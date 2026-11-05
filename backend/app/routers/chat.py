@@ -19,6 +19,7 @@ from app.services.additional_tools import (
 )
 from app.services.subagent import execute_isolated_subagent
 from app.services.signup_bridge import execute_signup_registration_tool
+from app.services.rate_limit import check_rate_limit
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -669,6 +670,15 @@ async def chat_stream(
     user_text = payload.message.strip()
     if not user_text:
         raise HTTPException(status_code=400, detail="訊息內容不能為空")
+
+    # 速率限制：每社每分鐘最多 N 次（管理員沒有社就以帳號計）。放在最前面，被擋時不會碰資料庫也不會呼叫模型
+    allowed, retry_after = check_rate_limit(user.club_id or user.id)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"本社提問太頻繁，請 {retry_after} 秒後再試（每分鐘最多 {settings.CHAT_RATE_LIMIT_PER_MINUTE} 次）",
+            headers={"Retry-After": str(retry_after)},
+        )
 
     # 模組 9：若指定單一文件過濾，必須是此使用者看得到的文件（地區級或本社）
     if payload.document_id:

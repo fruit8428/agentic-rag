@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     SIGNUP_PAYMENT_KEY: str = os.getenv("SIGNUP_PAYMENT_KEY", "").strip() or "rotary_3523_payment_records_v1"
     SIGNUP_SITE_URL: str = os.getenv("SIGNUP_SITE_URL", "").strip()
 
+    # 聊天 API 速率限制：每社每分鐘最多幾次（0＝不限制）
+    CHAT_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "").strip() or "10")
+
 
 settings = Settings()
 

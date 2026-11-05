@@ -86,4 +86,4 @@
 - [x] 2. 設定與文件（`config.py` 新增 `SIGNUP_SUPABASE_URL / SIGNUP_SUPABASE_ANON_KEY / SIGNUP_STORAGE_KEY / SIGNUP_PAYMENT_KEY / SIGNUP_SITE_URL`，皆選填；`.env.example` 加說明；前端 `ChatView` 顯示 🗂️ 報名系統來源卡片）
 - [x] 3. 測試（`backend/tests/test_signup_bridge.py` 純函式 11 項；`backend/tests/e2e_signup_tool.py` 端到端 11 項：內建假 Supabase REST 不碰正式報名資料，驗證本社名單、繳費狀態、問他社被拒且不洩漏、無報名明確說沒有、管理員指定社）
 - [x] 4. 登入頁支援 `?club=` 預選社名（由報名系統「AI 小幫手」按鈕帶入；`AuthPage.tsx` 載入清單後比對社名、自動勾「記住社名」並顯示提示）
-
+- [x] 5. 安全加固（`services/rate_limit.py` 每社每分鐘 `CHAT_RATE_LIMIT_PER_MINUTE` 次（預設 10）滑動視窗，`chat_stream()` 開頭即檢查、超過回 429 含 Retry-After；`tests/e2e_rate_limit.py` 5 項：未登入 401/403、假 token 401、超限 429；金鑰盤點：service role 只在後端與測試腳本、前端無）
